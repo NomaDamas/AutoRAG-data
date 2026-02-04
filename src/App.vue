@@ -5,5 +5,5 @@ import { Toaster } from '@/components/ui/sonner'
 
 <template>
   <AppLayout />
-  <Toaster />
+  <Toaster position="top-right" />
 </template>

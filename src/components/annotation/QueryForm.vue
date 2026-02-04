@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toast } from 'vue-sonner'
+import { ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -8,30 +8,35 @@ import { useAnnotationStore, useSelectionStore } from '@/stores'
 const annotationStore = useAnnotationStore()
 const selectionStore = useSelectionStore()
 
+const saveSuccess = ref(false)
+
 async function handleSave() {
   if (annotationStore.editingQuery) {
     const result = await annotationStore.updateQuery()
     if (result) {
-      toast.success('Query updated')
+      showSaveSuccess()
       selectionStore.clearSelection()
     }
   } else {
     const result = await annotationStore.saveQuery()
     if (result) {
-      toast.success('Query saved')
+      showSaveSuccess()
       selectionStore.clearSelection()
     }
   }
+}
+
+function showSaveSuccess() {
+  saveSuccess.value = true
+  setTimeout(() => {
+    saveSuccess.value = false
+  }, 2000)
 }
 
 function handleCancel() {
   annotationStore.cancelEditing()
 }
 
-function handleAnswerInput(index: number, event: Event) {
-  const target = event.target as HTMLTextAreaElement
-  annotationStore.updateGenerationGt(index, target.value)
-}
 </script>
 
 <template>
@@ -86,10 +91,9 @@ function handleAnswerInput(index: number, event: Event) {
           class="flex items-start gap-2"
         >
           <Textarea
-            :value="answer"
+            v-model="annotationStore.draftGenerationGt[index]"
             :placeholder="`Answer ${index + 1}...`"
             class="flex-1 min-h-[60px] bg-gray-700 border-gray-600 text-gray-100 placeholder:text-gray-500"
-            @input="handleAnswerInput(index, $event)"
           />
           <Button
             v-if="annotationStore.draftGenerationGt.length > 1"
@@ -128,11 +132,19 @@ function handleAnswerInput(index: number, event: Event) {
     <div class="flex items-center gap-2">
       <Button
         type="submit"
-        :disabled="!annotationStore.canSave || annotationStore.isSaving"
-        class="bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
+        :disabled="!annotationStore.canSave || annotationStore.isSaving || saveSuccess"
+        :class="saveSuccess
+          ? 'bg-green-600 hover:bg-green-600'
+          : 'bg-blue-600 hover:bg-blue-700 disabled:opacity-50'"
       >
         <span v-if="annotationStore.isSaving" class="i-mdi-loading animate-spin mr-2" />
-        {{ annotationStore.editingQuery ? 'Update' : 'Save' }}
+        <span v-else-if="saveSuccess" class="i-mdi-check mr-2" />
+        <template v-if="saveSuccess">
+          Saved!
+        </template>
+        <template v-else>
+          {{ annotationStore.editingQuery ? 'Update' : 'Save' }}
+        </template>
       </Button>
       <Button
         v-if="annotationStore.editingQuery"
