@@ -6,12 +6,13 @@ import { useConnectionStore, useSelectionStore, useAnnotationStore } from '@/sto
 import QueryForm from './QueryForm.vue'
 import EvidenceList from './EvidenceList.vue'
 import QueryList from './QueryList.vue'
+import ExportPanel from '@/components/export/ExportPanel.vue'
 
 const connectionStore = useConnectionStore()
 const selectionStore = useSelectionStore()
 const annotationStore = useAnnotationStore()
 
-const activeTab = ref<'create' | 'list'>('create')
+const activeTab = ref<'create' | 'list' | 'export'>('create')
 </script>
 
 <template>
@@ -32,6 +33,13 @@ const activeTab = ref<'create' | 'list'>('create')
           @click="activeTab = 'list'"
         >
           Queries
+        </button>
+        <button
+          class="px-3 py-1.5 text-sm font-medium rounded-md transition-colors ml-1"
+          :class="activeTab === 'export' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'"
+          @click="activeTab = 'export'"
+        >
+          Export
         </button>
       </div>
     </div>
@@ -74,6 +82,11 @@ const activeTab = ref<'create' | 'list'>('create')
         <!-- List Tab -->
         <div v-else-if="activeTab === 'list'">
           <QueryList />
+        </div>
+
+        <!-- Export Tab -->
+        <div v-else-if="activeTab === 'export'">
+          <ExportPanel />
         </div>
       </div>
     </ScrollArea>

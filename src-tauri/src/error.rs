@@ -20,6 +20,12 @@ pub enum AppError {
     #[error("PDF processing error: {0}")]
     PdfError(String),
 
+    #[error("CSV error: {0}")]
+    Csv(#[from] csv::Error),
+
+    #[error("ZIP error: {0}")]
+    Zip(#[from] zip::result::ZipError),
+
     #[error("{0}")]
     Custom(String),
 }

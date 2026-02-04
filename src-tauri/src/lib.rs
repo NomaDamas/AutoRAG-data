@@ -74,6 +74,9 @@ pub fn run() {
             // Ingest commands
             commands::ingest_pdf,
             commands::get_supported_formats,
+            // Export commands
+            commands::get_export_counts,
+            commands::export_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

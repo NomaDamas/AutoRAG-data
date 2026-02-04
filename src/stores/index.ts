@@ -26,3 +26,10 @@ export {
   type IngestionProgress,
   type IngestionResult,
 } from './ingest'
+export {
+  useExportStore,
+  type ExportConfig,
+  type ExportProgress,
+  type ExportResult,
+  type ExportCounts,
+} from './export'
