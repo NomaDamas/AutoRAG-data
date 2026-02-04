@@ -30,7 +30,13 @@ export default defineConfig({
         'vue-router',
         'pinia',
         {
-          '@/store': ['useStore'],
+          '@/stores': [
+            'useConnectionStore',
+            'useDocumentsStore',
+            'useSelectionStore',
+            'useAnnotationStore',
+            'useUiStore',
+          ],
         },
       ],
       dts: 'auto-imports.d.ts',

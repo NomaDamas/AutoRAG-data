@@ -1,11 +1,11 @@
 const pluginVitest = require('@vitest/eslint-plugin')
 const skipFormatting = require('@vue/eslint-config-prettier/skip-formatting')
-const vueTsEslintConfig = require('@vue/eslint-config-typescript')
+const { defineConfigWithVueTs, vueTsConfigs } = require('@vue/eslint-config-typescript')
 const security = require('eslint-plugin-security')
 const pluginVue = require('eslint-plugin-vue')
 
 /** @type {import('eslint').Linter.Config[]} */
-module.exports = [
+module.exports = defineConfigWithVueTs(
   {
     name: 'app/files-to-lint',
     files: ['**/*.{ts,mts,tsx,vue}'],
@@ -13,8 +13,11 @@ module.exports = [
 
   {
     name: 'app/files-to-ignore',
-    ignores: ['**/dist/**', '**/dist-ssr/**', '**/coverage/**', '**/test-results/**', '*.config.*'],
+    ignores: ['**/dist/**', '**/dist-ssr/**', '**/coverage/**', '**/test-results/**', '*.config.*', '**/src-tauri/target/**', 'bump-version.cjs', '**/components/ui/**'],
   },
+
+  pluginVue.configs['flat/recommended'],
+  vueTsConfigs.recommended,
 
   {
     name: 'app/rules',
@@ -39,9 +42,6 @@ module.exports = [
     },
   },
 
-  ...pluginVue.configs['flat/recommended'],
-  ...vueTsEslintConfig(),
-
   {
     ...pluginVitest.configs.recommended,
     files: ['tests/unit/**/*'],
@@ -50,4 +50,4 @@ module.exports = [
   skipFormatting,
 
   security.configs.recommended,
-]
+)

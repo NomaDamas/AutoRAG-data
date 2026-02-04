@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "shadcnVue": {
+      "command": "npx",
+      "args": [
+        "shadcn-vue@latest",
+        "mcp"
+      ]
+    },
+    "tauri-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@hypothesi/tauri-mcp-server"
+      ]
+    }
+  }
+}

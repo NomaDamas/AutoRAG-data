@@ -1,15 +1,31 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    println!("Backend was called with an argument: {}", name);
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+mod cache;
+mod commands;
+mod db;
+mod error;
+mod ingest;
+mod state;
+
+use std::sync::Mutex;
+
+use cache::CacheManager;
+use directories::ProjectDirs;
+use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let cache_path = ProjectDirs::from("com", "autorag", "data")
+        .map(|dirs| dirs.cache_dir().to_path_buf())
+        .unwrap_or_else(|| std::env::temp_dir().join("autorag-data-cache"));
+
+    let app_state = AppState::new(cache_path.clone());
+
+    let cache_manager = CacheManager::new(cache_path).ok();
+
     tauri::Builder::default()
+        .manage(app_state)
+        .manage(Mutex::new(cache_manager))
         .setup(|_app| {
-            #[cfg(debug_assertions)] // only include this code on debug builds
+            #[cfg(debug_assertions)]
             {
                 let window = tauri::Manager::get_webview_window(_app, "main").unwrap();
                 window.open_devtools();
@@ -18,7 +34,47 @@ pub fn run() {
         })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_prevent_default::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .invoke_handler(tauri::generate_handler![
+            // Database commands
+            commands::connect_database,
+            commands::disconnect_database,
+            commands::test_connection,
+            commands::is_connected,
+            // Document commands
+            commands::list_files,
+            commands::list_files_with_documents,
+            commands::list_documents,
+            commands::get_document,
+            commands::get_document_with_pages,
+            commands::get_pages,
+            commands::get_page_chunks,
+            commands::get_file_path,
+            commands::get_document_page_count,
+            // Cache commands
+            commands::get_thumbnail_url,
+            commands::get_preview_url,
+            commands::get_page_image_url,
+            commands::get_chunk_image_url,
+            commands::clear_cache,
+            commands::clear_db_cache,
+            commands::get_cache_size,
+            commands::prefetch_document_thumbnails,
+            // Query commands
+            commands::create_query,
+            commands::update_query,
+            commands::delete_query,
+            commands::list_queries,
+            commands::get_query_with_evidence,
+            commands::add_retrieval_relation,
+            commands::remove_retrieval_relation,
+            commands::remove_evidence_group,
+            commands::reorder_evidence,
+            // Ingest commands
+            commands::ingest_pdf,
+            commands::get_supported_formats,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
