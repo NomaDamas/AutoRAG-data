@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,10 +10,17 @@ const selectionStore = useSelectionStore()
 
 async function handleSave() {
   if (annotationStore.editingQuery) {
-    await annotationStore.updateQuery()
+    const result = await annotationStore.updateQuery()
+    if (result) {
+      toast.success('Query updated')
+      selectionStore.clearSelection()
+    }
   } else {
-    await annotationStore.saveQuery()
-    selectionStore.clearSelection()
+    const result = await annotationStore.saveQuery()
+    if (result) {
+      toast.success('Query saved')
+      selectionStore.clearSelection()
+    }
   }
 }
 

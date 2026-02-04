@@ -102,29 +102,32 @@ pub async fn get_thumbnail_url(
         .ok_or(AppError::NotConnected)?;
     let pool = state.get_pool().await.ok_or(AppError::NotConnected)?;
 
-    // Get first image chunk ID and contents for this page
-    let row: Option<(i64, Vec<u8>, String)> = sqlx::query_as(
-        r#"
-        SELECT id, contents, mimetype
-        FROM image_chunk
-        WHERE parent_page = $1
-        ORDER BY id ASC
-        LIMIT 1
-        "#,
+    // Stage 1: Get chunk_id only (fast - no bytea transfer)
+    let chunk_id: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM image_chunk WHERE parent_page = $1 ORDER BY id ASC LIMIT 1",
     )
     .bind(page_id)
     .fetch_optional(&pool)
     .await?;
 
-    let (chunk_id, contents, _mimetype) =
-        row.ok_or_else(|| AppError::NotFound(format!("Page {} has no image chunks", page_id)))?;
+    let (chunk_id,) = chunk_id
+        .ok_or_else(|| AppError::NotFound(format!("Page {} has no image chunks", page_id)))?;
 
-    // Check if thumbnail exists using chunk_id
+    // Check cache BEFORE loading image data
     let (thumbnail_path, exists) = check_and_get_thumbnail_path(&cache, &db_name, chunk_id)?;
 
     if exists {
         return Ok(thumbnail_path.to_string_lossy().to_string());
     }
+
+    // Stage 2: Cache miss - now fetch the full image
+    let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT contents FROM image_chunk WHERE id = $1")
+        .bind(chunk_id)
+        .fetch_optional(&pool)
+        .await?;
+
+    let (contents,) =
+        row.ok_or_else(|| AppError::NotFound(format!("Chunk {} not found", chunk_id)))?;
 
     // Generate thumbnail with chunk_id as cache key
     generate_thumbnail(&cache, &contents, &db_name, chunk_id)?;
@@ -175,29 +178,32 @@ pub async fn get_preview_url(
         .ok_or(AppError::NotConnected)?;
     let pool = state.get_pool().await.ok_or(AppError::NotConnected)?;
 
-    // Get first image chunk ID and contents for this page
-    let row: Option<(i64, Vec<u8>, String)> = sqlx::query_as(
-        r#"
-        SELECT id, contents, mimetype
-        FROM image_chunk
-        WHERE parent_page = $1
-        ORDER BY id ASC
-        LIMIT 1
-        "#,
+    // Stage 1: Get chunk_id only (fast - no bytea transfer)
+    let chunk_id: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM image_chunk WHERE parent_page = $1 ORDER BY id ASC LIMIT 1",
     )
     .bind(page_id)
     .fetch_optional(&pool)
     .await?;
 
-    let (chunk_id, contents, _mimetype) =
-        row.ok_or_else(|| AppError::NotFound(format!("Page {} has no image chunks", page_id)))?;
+    let (chunk_id,) = chunk_id
+        .ok_or_else(|| AppError::NotFound(format!("Page {} has no image chunks", page_id)))?;
 
-    // Check if preview exists using chunk_id
+    // Check cache BEFORE loading image data
     let (preview_path, exists) = check_and_get_preview_path(&cache, &db_name, chunk_id)?;
 
     if exists {
         return Ok(preview_path.to_string_lossy().to_string());
     }
+
+    // Stage 2: Cache miss - now fetch the full image
+    let row: Option<(Vec<u8>,)> = sqlx::query_as("SELECT contents FROM image_chunk WHERE id = $1")
+        .bind(chunk_id)
+        .fetch_optional(&pool)
+        .await?;
+
+    let (contents,) =
+        row.ok_or_else(|| AppError::NotFound(format!("Chunk {} not found", chunk_id)))?;
 
     // Generate preview with chunk_id as cache key
     generate_preview(&cache, &contents, &db_name, chunk_id)?;

@@ -52,6 +52,7 @@ declare module 'vue' {
     ScrollBar: typeof import('./src/components/ui/scroll-area/ScrollBar.vue')['default']
     Separator: typeof import('./src/components/ui/separator/Separator.vue')['default']
     Skeleton: typeof import('./src/components/ui/skeleton/Skeleton.vue')['default']
+    Sonner: typeof import('./src/components/ui/sonner/Sonner.vue')['default']
     StatusBar: typeof import('./src/components/layout/StatusBar.vue')['default']
     Textarea: typeof import('./src/components/ui/textarea/Textarea.vue')['default']
     Tooltip: typeof import('./src/components/ui/tooltip/Tooltip.vue')['default']
