@@ -26,6 +26,9 @@ async function handleRefresh() {
 async function handleClearCache() {
   try {
     await invoke('clear_db_cache')
+    // Clear frontend in-memory thumbnail cache and reload
+    documentsStore.thumbnailUrls.clear()
+    await documentsStore.loadThumbnails()
   } catch (err) {
     console.error('Failed to clear cache:', err)
   }
@@ -62,7 +65,7 @@ async function handleClearCache() {
           size="sm"
           class="h-7 w-7 p-0"
           :disabled="!connectionStore.isConnected"
-          title="Clear thumbnail cache"
+          title="Clear cache"
           @click="handleClearCache"
         >
           <span class="i-mdi-broom text-lg" />
