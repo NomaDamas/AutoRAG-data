@@ -73,6 +73,7 @@ pub fn run() {
             commands::reorder_evidence,
             // Ingest commands
             commands::ingest_pdf,
+            commands::ingest_images,
             commands::get_supported_formats,
             // Export commands
             commands::get_export_counts,

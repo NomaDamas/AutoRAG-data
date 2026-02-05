@@ -20,9 +20,14 @@ const documentsStore = useDocumentsStore()
 const ingestStore = useIngestStore()
 const uiStore = useUiStore()
 
+type IngestMode = 'pdf' | 'images'
+
+const mode = ref<IngestMode>('pdf')
 const selectedFile = ref<string | null>(null)
+const selectedFiles = ref<string[]>([])
 const titleOverride = ref('')
 const authorOverride = ref('')
+const documentTitle = ref('')
 
 const fileName = computed(() => {
   if (!selectedFile.value) return ''
@@ -30,7 +35,14 @@ const fileName = computed(() => {
   return parts[parts.length - 1] || ''
 })
 
-const canIngest = computed(() => {
+const selectedFileNames = computed(() => {
+  return selectedFiles.value.map((path) => {
+    const parts = path.split('/')
+    return parts[parts.length - 1] || path
+  })
+})
+
+const canIngestPdf = computed(() => {
   return (
     selectedFile.value &&
     connectionStore.isConnected &&
@@ -38,14 +50,30 @@ const canIngest = computed(() => {
   )
 })
 
+const canIngestImages = computed(() => {
+  return (
+    selectedFiles.value.length > 0 &&
+    documentTitle.value.trim() !== '' &&
+    connectionStore.isConnected &&
+    !ingestStore.isIngesting
+  )
+})
+
+const canIngest = computed(() => {
+  return mode.value === 'pdf' ? canIngestPdf.value : canIngestImages.value
+})
+
 // Reset form when dialog closes
 watch(
   () => uiStore.isIngestDialogOpen,
   (isOpen) => {
     if (!isOpen) {
+      mode.value = 'pdf'
       selectedFile.value = null
+      selectedFiles.value = []
       titleOverride.value = ''
       authorOverride.value = ''
+      documentTitle.value = ''
       ingestStore.reset()
     }
   }
@@ -67,20 +95,54 @@ async function handleSelectFile() {
   }
 }
 
-async function handleIngest() {
-  if (!selectedFile.value) return
-
-  const result = await ingestStore.ingestPdf(
-    selectedFile.value,
-    titleOverride.value || undefined,
-    authorOverride.value || undefined
-  )
+async function handleSelectImages() {
+  const result = await open({
+    multiple: true,
+    filters: [
+      {
+        name: 'Images',
+        extensions: ['png', 'jpg', 'jpeg', 'webp'],
+      },
+    ],
+  })
 
   if (result) {
-    console.log('Ingestion successful:', result)
-    // Refresh document list
-    await documentsStore.loadFiles()
-    console.log('Files loaded:', documentsStore.files)
+    selectedFiles.value = result as string[]
+  }
+}
+
+function removeImage(index: number) {
+  selectedFiles.value = selectedFiles.value.filter((_, i) => i !== index)
+}
+
+async function handleIngest() {
+  if (mode.value === 'pdf') {
+    if (!selectedFile.value) return
+
+    const result = await ingestStore.ingestPdf(
+      selectedFile.value,
+      titleOverride.value || undefined,
+      authorOverride.value || undefined
+    )
+
+    if (result) {
+      console.log('Ingestion successful:', result)
+      await documentsStore.loadDocuments()
+      console.log('Files loaded:', documentsStore.documents)
+    }
+  } else {
+    if (selectedFiles.value.length === 0 || !documentTitle.value.trim()) return
+
+    const result = await ingestStore.ingestImages(
+      selectedFiles.value,
+      documentTitle.value.trim()
+    )
+
+    if (result) {
+      console.log('Image ingestion successful:', result)
+      await documentsStore.loadDocuments()
+      console.log('Files loaded:', documentsStore.documents)
+    }
   }
 }
 
@@ -93,9 +155,9 @@ function handleClose() {
   <Dialog v-model:open="uiStore.isIngestDialogOpen">
     <DialogContent class="bg-gray-800 border-gray-700 text-gray-100 sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Import PDF</DialogTitle>
+        <DialogTitle>Import Document</DialogTitle>
         <DialogDescription class="text-gray-400">
-          Select a PDF file to import into the database. Each page will be rendered as an image.
+          Import a PDF file or multiple images into the database.
         </DialogDescription>
       </DialogHeader>
 
@@ -109,53 +171,132 @@ function handleClose() {
           Please connect to a database first.
         </div>
 
-        <!-- File Selection -->
-        <div class="space-y-2">
-          <Label>PDF File</Label>
-          <div class="flex gap-2">
+        <!-- Mode Toggle -->
+        <div class="flex rounded-lg bg-gray-700/50 p-1">
+          <button
+            type="button"
+            class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+            :class="mode === 'pdf' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'"
+            :disabled="ingestStore.isIngesting"
+            @click="mode = 'pdf'"
+          >
+            <span class="i-mdi-file-pdf-box mr-1.5" />
+            PDF
+          </button>
+          <button
+            type="button"
+            class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+            :class="mode === 'images' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'"
+            :disabled="ingestStore.isIngesting"
+            @click="mode = 'images'"
+          >
+            <span class="i-mdi-image-multiple mr-1.5" />
+            Images
+          </button>
+        </div>
+
+        <!-- PDF Mode -->
+        <template v-if="mode === 'pdf'">
+          <!-- File Selection -->
+          <div class="space-y-2">
+            <Label>PDF File</Label>
+            <div class="flex gap-2">
+              <Input
+                :model-value="fileName"
+                readonly
+                class="flex-1 bg-gray-700 border-gray-600"
+                placeholder="No file selected"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                class="border-gray-600 hover:bg-gray-700"
+                :disabled="ingestStore.isIngesting"
+                @click="handleSelectFile"
+              >
+                <span class="i-mdi-folder-open mr-2" />
+                Browse
+              </Button>
+            </div>
+          </div>
+
+          <!-- Optional Overrides -->
+          <div class="space-y-4">
+            <div class="space-y-2">
+              <Label for="title-override">Title (optional)</Label>
+              <Input
+                id="title-override"
+                v-model="titleOverride"
+                class="bg-gray-700 border-gray-600"
+                placeholder="Override PDF title"
+                :disabled="ingestStore.isIngesting"
+              />
+            </div>
+
+            <div class="space-y-2">
+              <Label for="author-override">Author (optional)</Label>
+              <Input
+                id="author-override"
+                v-model="authorOverride"
+                class="bg-gray-700 border-gray-600"
+                placeholder="Override PDF author"
+                :disabled="ingestStore.isIngesting"
+              />
+            </div>
+          </div>
+        </template>
+
+        <!-- Images Mode -->
+        <template v-else>
+          <!-- Document Title (required) -->
+          <div class="space-y-2">
+            <Label for="document-title">Document Title <span class="text-red-400">*</span></Label>
             <Input
-              :model-value="fileName"
-              readonly
-              class="flex-1 bg-gray-700 border-gray-600"
-              placeholder="No file selected"
+              id="document-title"
+              v-model="documentTitle"
+              class="bg-gray-700 border-gray-600"
+              placeholder="Enter document title"
+              :disabled="ingestStore.isIngesting"
             />
+          </div>
+
+          <!-- Image Selection -->
+          <div class="space-y-2">
+            <Label>Image Files</Label>
             <Button
               type="button"
               variant="outline"
-              class="border-gray-600 hover:bg-gray-700"
+              class="w-full border-gray-600 hover:bg-gray-700"
               :disabled="ingestStore.isIngesting"
-              @click="handleSelectFile"
+              @click="handleSelectImages"
             >
-              <span class="i-mdi-folder-open mr-2" />
-              Browse
+              <span class="i-mdi-image-plus mr-2" />
+              Select Images
             </Button>
           </div>
-        </div>
 
-        <!-- Optional Overrides -->
-        <div class="space-y-4">
-          <div class="space-y-2">
-            <Label for="title-override">Title (optional)</Label>
-            <Input
-              id="title-override"
-              v-model="titleOverride"
-              class="bg-gray-700 border-gray-600"
-              placeholder="Override PDF title"
-              :disabled="ingestStore.isIngesting"
-            />
+          <!-- Selected Files List -->
+          <div v-if="selectedFiles.length > 0" class="space-y-2">
+            <Label class="text-gray-400">{{ selectedFiles.length }} file(s) selected</Label>
+            <div class="max-h-32 overflow-y-auto rounded-md bg-gray-700/50 p-2 space-y-1">
+              <div
+                v-for="(name, index) in selectedFileNames"
+                :key="index"
+                class="flex items-center justify-between rounded px-2 py-1 text-sm hover:bg-gray-600/50"
+              >
+                <span class="truncate flex-1">{{ name }}</span>
+                <button
+                  type="button"
+                  class="ml-2 text-gray-400 hover:text-red-400"
+                  :disabled="ingestStore.isIngesting"
+                  @click="removeImage(index)"
+                >
+                  <span class="i-mdi-close" />
+                </button>
+              </div>
+            </div>
           </div>
-
-          <div class="space-y-2">
-            <Label for="author-override">Author (optional)</Label>
-            <Input
-              id="author-override"
-              v-model="authorOverride"
-              class="bg-gray-700 border-gray-600"
-              placeholder="Override PDF author"
-              :disabled="ingestStore.isIngesting"
-            />
-          </div>
-        </div>
+        </template>
 
         <!-- Progress -->
         <div v-if="ingestStore.progress" class="space-y-2">
@@ -181,7 +322,7 @@ function handleClose() {
           class="rounded-md bg-green-900/50 p-3 text-sm text-green-300"
         >
           <span class="i-mdi-check-circle mr-2" />
-          Successfully imported {{ ingestStore.lastResult.page_count }} pages.
+          Successfully imported {{ ingestStore.lastResult.page_count }} {{ mode === 'pdf' ? 'pages' : 'images' }}.
         </div>
       </div>
 

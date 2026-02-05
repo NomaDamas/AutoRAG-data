@@ -48,9 +48,8 @@ export interface DocumentWithPages {
 }
 
 export const useDocumentsStore = defineStore('documents', () => {
-  const files = ref<FileWithDocuments[]>([])
+  const documents = ref<Document[]>([])
   const currentDocument = ref<DocumentWithPages | null>(null)
-  const currentFile = ref<File | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
   const thumbnailUrls = ref<Map<number, string>>(new Map())
@@ -59,18 +58,18 @@ export const useDocumentsStore = defineStore('documents', () => {
   const currentDocumentInfo = computed(() => currentDocument.value?.document ?? null)
   const pageCount = computed(() => currentDocument.value?.pages.length ?? 0)
 
-  async function loadFiles() {
+  async function loadDocuments() {
     isLoading.value = true
     error.value = null
 
     try {
-      const result = await invoke<FileWithDocuments[]>('list_files_with_documents')
-      console.log('list_files_with_documents returned:', result)
-      files.value = result
+      const result = await invoke<Document[]>('list_documents')
+      console.log('list_documents returned:', result)
+      documents.value = result
     } catch (err) {
-      console.error('loadFiles error:', err)
+      console.error('loadDocuments error:', err)
       error.value = err instanceof Error ? err.message : String(err)
-      files.value = []
+      documents.value = []
     } finally {
       isLoading.value = false
     }
@@ -84,15 +83,6 @@ export const useDocumentsStore = defineStore('documents', () => {
       currentDocument.value = await invoke<DocumentWithPages>('get_document_with_pages', {
         documentId,
       })
-
-      // Find and set current file
-      for (const fileWithDocs of files.value) {
-        const foundDoc = fileWithDocs.documents.find((doc) => doc.id === documentId)
-        if (foundDoc) {
-          currentFile.value = fileWithDocs.file
-          break
-        }
-      }
 
       // Clear old thumbnails and load new ones
       thumbnailUrls.value.clear()
@@ -160,7 +150,6 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   function clearCurrentDocument() {
     currentDocument.value = null
-    currentFile.value = null
     thumbnailUrls.value.clear()
   }
 
@@ -169,16 +158,15 @@ export const useDocumentsStore = defineStore('documents', () => {
   }
 
   return {
-    files,
+    documents,
     currentDocument,
-    currentFile,
     currentPages,
     currentDocumentInfo,
     pageCount,
     isLoading,
     error,
     thumbnailUrls,
-    loadFiles,
+    loadDocuments,
     selectDocument,
     loadThumbnails,
     getPreviewUrl,

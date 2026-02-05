@@ -21,7 +21,7 @@ const uiStore = useUiStore()
 onMounted(async () => {
   await connectionStore.checkConnectionStatus()
   if (connectionStore.isConnected) {
-    await documentsStore.loadFiles()
+    await documentsStore.loadDocuments()
   }
 })
 </script>
@@ -42,7 +42,7 @@ onMounted(async () => {
       <ResizableHandle class="w-1 bg-gray-700 hover:bg-blue-500 transition-colors" />
 
       <!-- Center Panel: Page Grid -->
-      <ResizablePanel :default-size="100 - uiStore.leftPanelSize - uiStore.rightPanelSize" :min-size="30">
+      <ResizablePanel :default-size="100 - uiStore.leftPanelSize - uiStore.rightPanelSize" :min-size="30" class="h-full">
         <PageGrid />
       </ResizablePanel>
 

@@ -1,5 +1,7 @@
-use std::path::PathBuf;
+use std::io::Cursor;
+use std::path::{Path, PathBuf};
 
+use image::io::Reader as ImageReader;
 use tauri::{AppHandle, Emitter, State};
 use tokio::task::spawn_blocking;
 
@@ -119,8 +121,139 @@ pub async fn ingest_pdf(
     })
 }
 
+/// Load an image file and convert it to PNG bytes
+fn load_image_as_png(path: &Path) -> Result<Vec<u8>> {
+    let img = ImageReader::open(path)
+        .map_err(|e| AppError::ImageError(format!("Failed to open image: {}", e)))?
+        .decode()
+        .map_err(|e| AppError::ImageError(format!("Failed to decode image: {}", e)))?;
+
+    let mut png_bytes = Vec::new();
+    img.write_to(&mut Cursor::new(&mut png_bytes), image::ImageFormat::Png)
+        .map_err(|e| AppError::ImageError(format!("Failed to encode as PNG: {}", e)))?;
+
+    Ok(png_bytes)
+}
+
+/// Ingest multiple image files into the database as a single document
+#[tauri::command]
+pub async fn ingest_images(
+    file_paths: Vec<String>,
+    title: String,
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<IngestionResult> {
+    // Validate inputs
+    if file_paths.is_empty() {
+        return Err(AppError::ImageError("No files provided".to_string()));
+    }
+
+    if title.trim().is_empty() {
+        return Err(AppError::ImageError("Title is required".to_string()));
+    }
+
+    // Get database pool
+    let pool = state.get_pool().await.ok_or(AppError::NotConnected)?;
+
+    let total_images = file_paths.len() as i32;
+
+    // Emit reading progress
+    let _ = app_handle.emit(
+        "ingestion-progress",
+        IngestionProgress::reading(total_images),
+    );
+
+    // Convert paths to PathBuf and validate they exist
+    let paths: Vec<PathBuf> = file_paths.iter().map(PathBuf::from).collect();
+    for path in &paths {
+        if !path.exists() {
+            return Err(AppError::ImageError(format!(
+                "File not found: {}",
+                path.display()
+            )));
+        }
+    }
+
+    // Process images in a blocking task (image decoding can be CPU intensive)
+    let app_handle_clone = app_handle.clone();
+    let image_data: Vec<Vec<u8>> = spawn_blocking(move || {
+        let mut results = Vec::with_capacity(paths.len());
+        for (idx, path) in paths.iter().enumerate() {
+            // Emit progress
+            let _ = app_handle_clone.emit(
+                "ingestion-progress",
+                IngestionProgress::rendering((idx + 1) as i32, total_images),
+            );
+
+            let png_bytes = load_image_as_png(path)?;
+            results.push(png_bytes);
+        }
+        Ok::<_, AppError>(results)
+    })
+    .await
+    .map_err(|e| AppError::ImageError(format!("Task join error: {}", e)))??;
+
+    // Begin transaction
+    let mut tx = pool.begin().await?;
+
+    // Insert document record (no file record, path is NULL)
+    let document_id: i64 = sqlx::query_scalar(
+        r#"INSERT INTO document (path, filename, title) VALUES (NULL, NULL, $1) RETURNING id"#,
+    )
+    .bind(&title)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let mut image_chunk_count = 0;
+    let mimetype = "image/png".to_string();
+
+    // Insert pages and chunks
+    for (page_idx, png_bytes) in image_data.into_iter().enumerate() {
+        // Insert page record
+        let page_id: i64 = sqlx::query_scalar(
+            r#"INSERT INTO page (page_num, document_id, image_contents, mimetype)
+               VALUES ($1, $2, $3, $4) RETURNING id"#,
+        )
+        .bind((page_idx + 1) as i32) // 1-indexed page number
+        .bind(document_id)
+        .bind(&png_bytes)
+        .bind(&mimetype)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        // Insert image_chunk record
+        sqlx::query(
+            r#"INSERT INTO image_chunk (parent_page, contents, mimetype)
+               VALUES ($1, $2, $3)"#,
+        )
+        .bind(page_id)
+        .bind(&png_bytes)
+        .bind(&mimetype)
+        .execute(&mut *tx)
+        .await?;
+
+        image_chunk_count += 1;
+    }
+
+    // Commit transaction
+    tx.commit().await?;
+
+    // Emit complete progress
+    let _ = app_handle.emit(
+        "ingestion-progress",
+        IngestionProgress::complete(total_images),
+    );
+
+    Ok(IngestionResult {
+        file_id: 0, // No file record for image uploads
+        document_id,
+        page_count: total_images,
+        image_chunk_count,
+    })
+}
+
 /// Get supported file formats for ingestion
 #[tauri::command]
 pub fn get_supported_formats() -> Vec<&'static str> {
-    vec!["pdf"]
+    vec!["pdf", "png", "jpg", "jpeg", "webp"]
 }

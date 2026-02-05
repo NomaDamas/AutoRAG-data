@@ -39,7 +39,7 @@ async function handleConnect() {
   const success = await connectionStore.connect(form.value)
   if (success) {
     uiStore.closeConnectionDialog()
-    await documentsStore.loadFiles()
+    await documentsStore.loadDocuments()
   }
 }
 

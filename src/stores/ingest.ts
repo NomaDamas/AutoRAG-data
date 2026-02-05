@@ -85,6 +85,37 @@ export const useIngestStore = defineStore('ingest', () => {
     }
   }
 
+  async function ingestImages(filePaths: string[], title: string): Promise<IngestionResult | null> {
+    isIngesting.value = true
+    progress.value = null
+    error.value = null
+    lastResult.value = null
+
+    try {
+      await startListening()
+
+      const result = await invoke<IngestionResult>('ingest_images', {
+        filePaths,
+        title,
+      })
+
+      lastResult.value = result
+      return result
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : String(err)
+      progress.value = {
+        current_page: 0,
+        total_pages: 0,
+        phase: 'Failed',
+        message: error.value,
+      }
+      return null
+    } finally {
+      isIngesting.value = false
+      stopListening()
+    }
+  }
+
   async function getSupportedFormats(): Promise<string[]> {
     try {
       return await invoke<string[]>('get_supported_formats')
@@ -109,6 +140,7 @@ export const useIngestStore = defineStore('ingest', () => {
     isComplete,
     isFailed,
     ingestPdf,
+    ingestImages,
     getSupportedFormats,
     reset,
   }

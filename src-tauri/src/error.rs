@@ -20,6 +20,9 @@ pub enum AppError {
     #[error("PDF processing error: {0}")]
     PdfError(String),
 
+    #[error("Image processing error: {0}")]
+    ImageError(String),
+
     #[error("CSV error: {0}")]
     Csv(#[from] csv::Error),
 

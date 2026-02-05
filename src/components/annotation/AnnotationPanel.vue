@@ -16,7 +16,7 @@ const activeTab = ref<'create' | 'list' | 'export'>('create')
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <div class="flex h-full flex-col overflow-hidden">
     <!-- Header with Tabs -->
     <div class="border-b border-gray-700">
       <div class="flex items-center px-4 py-2">

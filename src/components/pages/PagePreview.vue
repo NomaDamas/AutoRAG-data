@@ -50,17 +50,17 @@ function handleClose() {
 
 <template>
   <Dialog :open="uiStore.isPreviewModalOpen" @update:open="handleClose">
-    <DialogContent class="max-w-4xl bg-gray-800 border-gray-700 text-gray-100">
+    <DialogContent class="max-w-[95vw] sm:max-w-[95vw] bg-gray-800 border-gray-700 text-gray-100">
       <DialogHeader>
         <DialogTitle v-if="previewPage">
           Page {{ previewPage.page_num }}
         </DialogTitle>
       </DialogHeader>
 
-      <div class="relative min-h-[60vh]">
+      <div class="relative min-h-[90vh]">
         <!-- Loading State -->
         <div v-if="isLoadingPreview" class="flex h-full items-center justify-center">
-          <Skeleton class="h-[60vh] w-full bg-gray-700" />
+          <Skeleton class="h-[90vh] w-full bg-gray-700" />
         </div>
 
         <!-- Preview Image -->
@@ -68,7 +68,7 @@ function handleClose() {
           v-else-if="previewUrl"
           :src="previewUrl"
           :alt="`Page ${previewPage?.page_num} preview`"
-          class="mx-auto max-h-[70vh] rounded-lg object-contain"
+          class="mx-auto max-h-[92vh] rounded-lg object-contain"
         />
 
         <!-- Error State -->
