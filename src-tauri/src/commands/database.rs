@@ -4,7 +4,7 @@ use crate::db::{create_pool, test_connection as test_db_connection, DatabaseConf
 use crate::error::{AppError, Result};
 use crate::state::AppState;
 
-/// Sanitize database name for use in file paths
+/// Sanitize a string for use in file paths
 fn sanitize_for_path(name: &str) -> String {
     name.chars()
         .map(|c| {

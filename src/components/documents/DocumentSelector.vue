@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { invoke } from '@tauri-apps/api/core'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -20,6 +21,14 @@ function isDocumentSelected(documentId: number): boolean {
 
 async function handleRefresh() {
   await documentsStore.loadDocuments()
+}
+
+async function handleClearCache() {
+  try {
+    await invoke('clear_db_cache')
+  } catch (err) {
+    console.error('Failed to clear cache:', err)
+  }
 }
 </script>
 
@@ -47,6 +56,16 @@ async function handleRefresh() {
           @click="handleRefresh"
         >
           <span class="i-mdi-refresh text-lg" :class="documentsStore.isLoading && 'animate-spin'" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          class="h-7 w-7 p-0"
+          :disabled="!connectionStore.isConnected"
+          title="Clear thumbnail cache"
+          @click="handleClearCache"
+        >
+          <span class="i-mdi-broom text-lg" />
         </Button>
         <Button
           variant="ghost"
