@@ -1,95 +1,55 @@
-# Tauri + Vue + Vite Template
+# AutoRAG Data
 
-![Screenshot](./public/v2_screenshot.webp)
+Build the dataset easily for RAG evaluation & optimization in AutoRAG family.
 
-A production-ready template to build fast, secure desktop apps with Tauri and Vue.
+Desktop application for building and managing RAG evaluation datasets, works perfect with [AutoRAG-Research](https://github.com/NomaDamas/AutoRAG-Research) 
+Ingest documents, annotate queries with evidence, and export structured datasets.
+Currently supports Visual Document Retrieval type datasets, more in the future.
 
 ## Features
 
-- **Vue 3 + TypeScript** - Type-safe frontend with devtools
-- **Tailwind 4** - CSS preconfigured for native app development
-- **Vite** - Fast builds with [AutoImport](https://github.com/antfu/unplugin-auto-import) for cleaner code
-- **Vitest** - Unit testing ready to go
-- **CI/CD included** - GitHub Actions for automated testing, builds, and releases
-- **VS Code ready** - Debugging configs and recommended extensions
+- **PDF/image ingestion** with page-level rendering and thumbnail caching
+- **Query annotation** — query text, query-to-LLM prompts, generation ground truths
+- **Evidence grouping** with graded relevance scoring
+- **Export** to CSV, JSON, or ZIP bundles
+
+## Prerequisites
+
+- [Tauri v2 prerequisites](https://tauri.app/start/prerequisites/) (Rust, system deps)
+- [pnpm](https://pnpm.io/)
+- Docker (for PostgreSQL)
 
 ## Quick Start
 
-1. Install [Tauri prerequisites](https://tauri.app/start/prerequisites/)
-2. Clone and install dependencies:
+```bash
+# Start the database
+make docker-up
 
-```sh
+# Install dependencies and run
 pnpm i
-```
-
-1. Run the development server (starts both the backend and frontend dev servers and opens the devtools):
-
-```sh
 pnpm tauri dev
 ```
 
-## Project Structure and Usage
+## Tech Stack
 
-A Tauri app has [two processes](https://tauri.app/concept/process-model/):
+Tauri v2 (Rust) · Vue 3 + TypeScript · Vite · Tailwind CSS v4 · Pinia · shadcn-vue · pnpm
 
-- **Core Process** (`backend`, or _main_ process in Electron terminology)
-- **WebView process** (`frontend`, _renderer_ in Electron)
+## Project Structure
 
-### Frontend (TS, PnPM)
-
-Frontend code lives in `src/`. See `package.json` for all available commands.
-
-**Testing:**
-
-```sh
-pnpm test
+```
+src/              Vue frontend
+src-tauri/        Rust backend (Tauri commands, DB access)
+postgresql/       Docker Compose + init scripts for PostgreSQL + VectorChord
 ```
 
-### Backend (Rust, Cargo)
+## Commands
 
-Backend code lives in `src-tauri/`.
-
-**Finding outdated dependencies** (requires [cargo-outdated](https://github.com/kbknapp/cargo-outdated)):
-
-```sh
-cd src-tauri && cargo outdated
+```bash
+pnpm tauri dev        # Dev mode (frontend + backend)
+pnpm tauri build      # Production build
+pnpm test             # Run Vitest tests
+pnpm type-check       # TypeScript checking
+pnpm exec eslint .    # Lint frontend
+cargo fmt             # Format Rust (in src-tauri/)
+cargo clippy          # Lint Rust (in src-tauri/)
 ```
-
-**Upgrading dependencies** (requires [cargo-edit](https://github.com/killercup/cargo-edit)):
-
-```sh
-cd src-tauri && cargo upgrade
-```
-
-### Debugging
-
-- The `dev` command has by default `RUST_BACKTRACE=1` set which makes Rust output full backtraces to the console. (Remove it from the `package.json` command if you don't want it).
-- If you use VS Code, you can debug Rust code with the included `Debug Tauri` config.
-
-### Building and releasing
-
-#### Building
-
-The project has GitHub Actions set up which will automatically test and build your app with every push and PR. To build manually run:
-
-```sh
-pnpm tauri build
-```
-
-#### Releasing a new version
-
-1. Bump version number by running `pnpm bump [x.y.z]`
-2. Run `pnpm check` to update `Cargo.lock`
-3. Tag the commit you want to release with `vX.Y.Z`
-4. Edit the release notes and push (also tags!)
-5. Github workflow will automatically build a new draft release for this version. Publish when ready 🎉
-
-## Follow Along
-
-- Follow [@uninen on X](https://x.com/uninen) or [uninen.net on Bluesky](https://bsky.app/profile/uninen.net)
-- Read my learnings around Tauri / Vue / TypeScript and other Web dev topics from my [Today I Learned blog](https://til.unessa.net/)
-- If you speak Finnish, check out [Koneoppiblogi](https://koneoppiblogi.uninen.net)
-
-## Contributing
-
-Contributions are welcome! Please [be nice](./CODE_OF_CONDUCT.md) when interacting with others.

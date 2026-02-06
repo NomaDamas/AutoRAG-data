@@ -1,43 +1,21 @@
 # AutoRAG-Data
 
-A Tauri v2 + Vue 3 desktop application for RAG (Retrieval-Augmented Generation) data management.
+Tauri v2 + Vue 3/TypeScript desktop app for RAG dataset management. Tailwind v4, Pinia, shadcn-vue, pnpm.
 
-## Tech Stack
-
-- **Framework**: Tauri v2 (Rust backend)
-- **Frontend**: Vue 3 with Composition API
-- **Language**: TypeScript
-- **Build Tool**: Vite
-- **Styling**: Tailwind CSS v4
-- **State Management**: Pinia
-- **Package Manager**: pnpm
-
-## Key Commands
+## Commands
 
 ```bash
-# Development
-pnpm dev              # Start dev server with Vue DevTools
-pnpm tauri dev        # Start Tauri development mode
-
-# Build
-pnpm build            # Build frontend
-pnpm tauri build      # Build complete Tauri app
-
-# Testing
-pnpm test             # Run Vitest tests
-pnpm type-check       # TypeScript type checking
-
-# Linting
-pnpm exec eslint .    # Lint frontend code
-
-# Rust (in src-tauri/)
-cargo fmt             # Format Rust code
-cargo check           # Check Rust code
-cargo clippy          # Lint Rust code
+pnpm tauri dev          # Dev mode
+pnpm tauri build        # Production build
+pnpm test               # Vitest
+pnpm type-check         # TS checking
+pnpm exec eslint .      # Lint frontend
+cargo fmt               # Format Rust (in src-tauri/)
+cargo clippy            # Lint Rust (in src-tauri/)
 ```
 
-## Project Structure
+## Structure
 
-- `src/` - Vue frontend source
-- `src-tauri/` - Rust backend source
-- `src-tauri/Cargo.toml` - Rust dependencies
+- `src/` — Vue frontend: components in `src/components/ui/` (shadcn-vue/reka-ui), stores in `src/stores/` (Pinia)
+- `src-tauri/` — Rust backend: Tauri commands in `src-tauri/src/commands/`, DB models/queries alongside
+- `postgresql/` — Docker Compose + init scripts for PostgreSQL + VectorChord
