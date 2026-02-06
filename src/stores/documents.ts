@@ -83,35 +83,46 @@ export const useDocumentsStore = defineStore('documents', () => {
       currentDocument.value = await invoke<DocumentWithPages>('get_document_with_pages', {
         documentId,
       })
-
-      // Clear old thumbnails and load new ones
       thumbnailUrls.value.clear()
-      await loadThumbnails()
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
       currentDocument.value = null
     } finally {
       isLoading.value = false
     }
+
+    // Non-blocking — thumbnails load in background and stream in reactively
+    loadThumbnails()
   }
 
   async function loadThumbnails() {
     if (!currentDocument.value) return
 
-    for (const pageWithChunks of currentDocument.value.pages) {
-      const page = pageWithChunks.page
-      if (!thumbnailUrls.value.has(page.id)) {
-        try {
-          const filePath = await invoke<string>('get_thumbnail_url', {
-            pageId: page.id,
-          })
-          const assetUrl = convertFileSrc(filePath)
-          thumbnailUrls.value.set(page.id, assetUrl)
-        } catch (err) {
-          console.error(`Failed to load thumbnail for page ${page.page_num}:`, err)
-        }
-      }
+    const documentId = currentDocument.value.document.id
+    const pages = currentDocument.value.pages
+
+    // Batch-generate all thumbnails server-side (1 query + bulk generation)
+    try {
+      await invoke('prefetch_document_thumbnails', { documentId })
+    } catch (err) {
+      console.error('prefetch_document_thumbnails failed:', err)
     }
+
+    // Fetch all URLs in parallel (all should be cache hits now)
+    await Promise.allSettled(
+      pages.map(async ({ page }) => {
+        if (!thumbnailUrls.value.has(page.id)) {
+          try {
+            const filePath = await invoke<string>('get_thumbnail_url', {
+              pageId: page.id,
+            })
+            thumbnailUrls.value.set(page.id, convertFileSrc(filePath))
+          } catch (err) {
+            console.error(`Failed to load thumbnail for page ${page.page_num}:`, err)
+          }
+        }
+      }),
+    )
   }
 
   async function getPreviewUrl(pageId: number): Promise<string | null> {
@@ -128,9 +139,8 @@ export const useDocumentsStore = defineStore('documents', () => {
 
   async function getPageImageUrl(pageId: number): Promise<string | null> {
     try {
-      return await invoke<string>('get_page_image_url', {
-        pageId,
-      })
+      const filePath = await invoke<string>('get_page_image_url', { pageId })
+      return convertFileSrc(filePath)
     } catch (err) {
       console.error(`Failed to get page image URL for page ${pageId}:`, err)
       return null

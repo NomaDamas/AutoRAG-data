@@ -22,6 +22,7 @@ impl CacheManager {
         fs::create_dir_all(&cache_dir)?;
         fs::create_dir_all(cache_dir.join("thumbnails"))?;
         fs::create_dir_all(cache_dir.join("previews"))?;
+        fs::create_dir_all(cache_dir.join("originals"))?;
         Ok(Self { cache_dir })
     }
 
@@ -45,6 +46,38 @@ impl CacheManager {
 
     pub fn has_preview(&self, db_name: &str, chunk_id: &i64) -> bool {
         self.preview_path(db_name, chunk_id).exists()
+    }
+
+    pub fn original_path(&self, db_name: &str, page_id: &i64) -> PathBuf {
+        self.cache_dir
+            .join("originals")
+            .join(db_name)
+            .join(format!("{}.png", page_id))
+    }
+
+    pub fn has_original(&self, db_name: &str, page_id: &i64) -> bool {
+        self.original_path(db_name, page_id).exists()
+    }
+
+    /// Save original page image bytes to the originals cache
+    pub fn save_original(
+        &self,
+        image_bytes: &[u8],
+        db_name: &str,
+        page_id: &i64,
+    ) -> Result<PathBuf> {
+        let original_path = self.original_path(db_name, page_id);
+
+        if original_path.exists() {
+            return Ok(original_path);
+        }
+
+        if let Some(parent) = original_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        fs::write(&original_path, image_bytes)?;
+        Ok(original_path)
     }
 
     /// Generate a thumbnail from image bytes (from database bytea column)
@@ -125,6 +158,10 @@ impl CacheManager {
         if preview_dir.exists() {
             fs::remove_dir_all(&preview_dir)?;
         }
+        let originals_dir = self.cache_dir.join("originals").join(db_name);
+        if originals_dir.exists() {
+            fs::remove_dir_all(&originals_dir)?;
+        }
         Ok(())
     }
 
@@ -140,6 +177,12 @@ impl CacheManager {
         if previews_dir.exists() {
             fs::remove_dir_all(&previews_dir)?;
             fs::create_dir_all(&previews_dir)?;
+        }
+
+        let originals_dir = self.cache_dir.join("originals");
+        if originals_dir.exists() {
+            fs::remove_dir_all(&originals_dir)?;
+            fs::create_dir_all(&originals_dir)?;
         }
 
         Ok(())

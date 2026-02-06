@@ -1,13 +1,17 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use image::io::Reader as ImageReader;
 use tauri::{AppHandle, Emitter, State};
 use tokio::task::spawn_blocking;
 
+use crate::cache::CacheManager;
 use crate::error::{AppError, Result};
 use crate::ingest::{process_pdf, IngestionProgress, IngestionResult};
 use crate::state::AppState;
+
+use super::cache::{generate_preview, generate_thumbnail};
 
 /// Ingest a PDF file into the database
 #[tauri::command]
@@ -17,6 +21,7 @@ pub async fn ingest_pdf(
     author: Option<String>,
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    cache: State<'_, Mutex<Option<CacheManager>>>,
 ) -> Result<IngestionResult> {
     // Get database pool
     let pool = state.get_pool().await.ok_or(AppError::NotConnected)?;
@@ -69,6 +74,7 @@ pub async fn ingest_pdf(
 
     let mut image_chunk_count = 0;
     let mimetype = "image/png".to_string();
+    let mut cache_items: Vec<(i64, Vec<u8>)> = Vec::with_capacity(page_count as usize);
 
     // Insert pages and chunks
     for (page_idx, png_bytes) in pdf_result.pages.into_iter().enumerate() {
@@ -78,34 +84,50 @@ pub async fn ingest_pdf(
             IngestionProgress::rendering((page_idx + 1) as i32, page_count),
         );
 
-        // Insert page record
+        // Insert page record with source_path metadata
+        let page_metadata = serde_json::json!({"source_path": file_path});
         let page_id: i64 = sqlx::query_scalar(
-            r#"INSERT INTO page (page_num, document_id, image_contents, mimetype)
-               VALUES ($1, $2, $3, $4) RETURNING id"#,
+            r#"INSERT INTO page (page_num, document_id, image_contents, mimetype, page_metadata)
+               VALUES ($1, $2, $3, $4, $5) RETURNING id"#,
         )
         .bind((page_idx + 1) as i32) // 1-indexed page number
         .bind(document_id)
         .bind(&png_bytes)
         .bind(&mimetype)
+        .bind(&page_metadata)
         .fetch_one(&mut *tx)
         .await?;
 
         // Insert image_chunk record (same image as page for now)
-        sqlx::query(
+        let chunk_id: i64 = sqlx::query_scalar(
             r#"INSERT INTO image_chunk (parent_page, contents, mimetype)
-               VALUES ($1, $2, $3)"#,
+               VALUES ($1, $2, $3) RETURNING id"#,
         )
         .bind(page_id)
         .bind(&png_bytes)
         .bind(&mimetype)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
 
+        cache_items.push((chunk_id, png_bytes));
         image_chunk_count += 1;
     }
 
     // Commit transaction
     tx.commit().await?;
+
+    // Generate thumbnail and preview caches
+    if let Some(db_name) = state.get_db_identifier().await {
+        let total = cache_items.len() as i32;
+        for (idx, (chunk_id, png_bytes)) in cache_items.iter().enumerate() {
+            let _ = app_handle.emit(
+                "ingestion-progress",
+                IngestionProgress::caching((idx + 1) as i32, total),
+            );
+            let _ = generate_thumbnail(&cache, png_bytes, &db_name, *chunk_id);
+            let _ = generate_preview(&cache, png_bytes, &db_name, *chunk_id);
+        }
+    }
 
     // Emit complete progress
     let _ = app_handle.emit(
@@ -142,6 +164,7 @@ pub async fn ingest_images(
     title: String,
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    cache: State<'_, Mutex<Option<CacheManager>>>,
 ) -> Result<IngestionResult> {
     // Validate inputs
     if file_paths.is_empty() {
@@ -206,37 +229,54 @@ pub async fn ingest_images(
 
     let mut image_chunk_count = 0;
     let mimetype = "image/png".to_string();
+    let mut cache_items: Vec<(i64, Vec<u8>)> = Vec::with_capacity(total_images as usize);
 
     // Insert pages and chunks
     for (page_idx, png_bytes) in image_data.into_iter().enumerate() {
-        // Insert page record
+        // Insert page record with source_path metadata
+        let page_metadata = serde_json::json!({"source_path": file_paths[page_idx]});
         let page_id: i64 = sqlx::query_scalar(
-            r#"INSERT INTO page (page_num, document_id, image_contents, mimetype)
-               VALUES ($1, $2, $3, $4) RETURNING id"#,
+            r#"INSERT INTO page (page_num, document_id, image_contents, mimetype, page_metadata)
+               VALUES ($1, $2, $3, $4, $5) RETURNING id"#,
         )
         .bind((page_idx + 1) as i32) // 1-indexed page number
         .bind(document_id)
         .bind(&png_bytes)
         .bind(&mimetype)
+        .bind(&page_metadata)
         .fetch_one(&mut *tx)
         .await?;
 
         // Insert image_chunk record
-        sqlx::query(
+        let chunk_id: i64 = sqlx::query_scalar(
             r#"INSERT INTO image_chunk (parent_page, contents, mimetype)
-               VALUES ($1, $2, $3)"#,
+               VALUES ($1, $2, $3) RETURNING id"#,
         )
         .bind(page_id)
         .bind(&png_bytes)
         .bind(&mimetype)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await?;
 
+        cache_items.push((chunk_id, png_bytes));
         image_chunk_count += 1;
     }
 
     // Commit transaction
     tx.commit().await?;
+
+    // Generate thumbnail and preview caches
+    if let Some(db_name) = state.get_db_identifier().await {
+        let total = cache_items.len() as i32;
+        for (idx, (chunk_id, png_bytes)) in cache_items.iter().enumerate() {
+            let _ = app_handle.emit(
+                "ingestion-progress",
+                IngestionProgress::caching((idx + 1) as i32, total),
+            );
+            let _ = generate_thumbnail(&cache, png_bytes, &db_name, *chunk_id);
+            let _ = generate_preview(&cache, png_bytes, &db_name, *chunk_id);
+        }
+    }
 
     // Emit complete progress
     let _ = app_handle.emit(

@@ -1,8 +1,12 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::error::{AppError, Result};
+
+/// Monotonic counter to ensure unique temp file names across concurrent calls
+static RENDER_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 use super::types::PdfMetadata;
 
@@ -100,10 +104,11 @@ fn get_pdf_info(path: &Path) -> Result<PdfInfo> {
 }
 
 /// Render a single page to PNG bytes at 150 DPI using pdftoppm
-fn render_page_to_png(path: &Path, page_num: i32) -> Result<Vec<u8>> {
-    // Create a temporary directory for the output
+pub fn render_page_to_png(path: &Path, page_num: i32) -> Result<Vec<u8>> {
+    // Create a unique temporary file prefix per call to avoid races
     let temp_dir = std::env::temp_dir();
-    let output_prefix = temp_dir.join(format!("autorag_page_{}", std::process::id()));
+    let counter = RENDER_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let output_prefix = temp_dir.join(format!("autorag_page_{}_{}", std::process::id(), counter));
 
     let output = Command::new("pdftoppm")
         .args([

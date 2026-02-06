@@ -28,6 +28,15 @@ impl IngestionProgress {
         }
     }
 
+    pub fn caching(current_page: i32, total_pages: i32) -> Self {
+        Self {
+            current_page,
+            total_pages,
+            phase: "Caching".to_string(),
+            message: format!("Caching page {} of {}", current_page, total_pages),
+        }
+    }
+
     pub fn complete(total_pages: i32) -> Self {
         Self {
             current_page: total_pages,
