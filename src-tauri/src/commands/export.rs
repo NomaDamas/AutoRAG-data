@@ -349,6 +349,7 @@ struct RelationRow {
     group_order: i32,
     chunk_id: Option<i64>,
     image_chunk_id: Option<i64>,
+    score: i32,
 }
 
 async fn export_relations_csv(
@@ -357,7 +358,7 @@ async fn export_relations_csv(
     app_handle: &AppHandle,
 ) -> Result<u32> {
     let rows = sqlx::query_as::<_, RelationRow>(
-        "SELECT query_id, group_index, group_order, chunk_id, image_chunk_id
+        "SELECT query_id, group_index, group_order, chunk_id, image_chunk_id, score
          FROM retrieval_relation
          ORDER BY query_id, group_index, group_order",
     )
@@ -378,6 +379,7 @@ async fn export_relations_csv(
         "group_order",
         "chunk_id",
         "image_chunk_id",
+        "score",
     ])?;
 
     for (i, row) in rows.iter().enumerate() {
@@ -389,6 +391,7 @@ async fn export_relations_csv(
             row.image_chunk_id
                 .map(|id| id.to_string())
                 .unwrap_or_default(),
+            row.score.to_string(),
         ])?;
 
         if (i + 1) % 100 == 0 || i + 1 == rows.len() {

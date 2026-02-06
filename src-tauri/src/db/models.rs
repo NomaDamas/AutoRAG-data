@@ -80,6 +80,7 @@ pub struct RetrievalRelation {
     pub group_order: i32,      // NOT NULL - rank within group
     pub chunk_id: Option<i64>, // FK to Chunk.id (text evidence)
     pub image_chunk_id: Option<i64>, // FK to ImageChunk.id (image evidence)
+    pub score: i32, // Relevance score: 0=not relevant, 1=somewhat relevant (default), 2=highly relevant
                                // Constraint: exactly one of chunk_id or image_chunk_id must be non-null
 }
 
@@ -134,14 +135,21 @@ pub struct EvidenceItem {
 // Request types for mutations
 // ============================================================================
 
+/// Evidence item with chunk_id and score
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvidenceWithScore {
+    pub chunk_id: i64,
+    pub score: i32, // 0=not relevant, 1=somewhat relevant (default), 2=highly relevant
+}
+
 /// Request to create a new query with evidence
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateQueryRequest {
     pub contents: String,
     pub query_to_llm: Option<String>,
     pub generation_gt: Option<Vec<String>>,
-    /// Evidence organized by groups - each inner Vec is a group with ordered chunks
-    pub evidence_groups: Vec<Vec<i64>>, // Vec of groups, each group is Vec of image_chunk_ids
+    /// Evidence organized by groups - each inner Vec is a group with ordered chunks and scores
+    pub evidence_groups: Vec<Vec<EvidenceWithScore>>,
 }
 
 /// Request to update an existing query
@@ -159,4 +167,14 @@ pub struct AddEvidenceRequest {
     pub query_id: i64,
     pub group_index: i32,
     pub image_chunk_id: i64,
+    pub score: Option<i32>, // Default to 1 if not provided
+}
+
+/// Request to update the score of an existing retrieval relation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateScoreRequest {
+    pub query_id: i64,
+    pub group_index: i32,
+    pub group_order: i32,
+    pub score: i32,
 }

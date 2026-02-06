@@ -3,7 +3,7 @@ use tauri::State;
 
 use crate::db::{
     AddEvidenceRequest, CreateQueryRequest, EvidenceGroup, EvidenceItem, ImageChunkInfo, PageInfo,
-    Query, QueryWithEvidence, RetrievalRelation, UpdateQueryRequest,
+    Query, QueryWithEvidence, RetrievalRelation, UpdateQueryRequest, UpdateScoreRequest,
 };
 use crate::error::{AppError, Result};
 use crate::state::AppState;
@@ -31,20 +31,21 @@ pub async fn create_query(
 
     // Insert evidence relations for each group
     let mut evidence_groups = Vec::new();
-    for (group_index, chunk_ids) in request.evidence_groups.iter().enumerate() {
+    for (group_index, evidence_items) in request.evidence_groups.iter().enumerate() {
         let mut items = Vec::new();
-        for (group_order, chunk_id) in chunk_ids.iter().enumerate() {
+        for (group_order, evidence) in evidence_items.iter().enumerate() {
             let relation = sqlx::query_as::<_, RetrievalRelation>(
                 r#"
-                INSERT INTO retrieval_relation (query_id, group_index, group_order, image_chunk_id)
-                VALUES ($1, $2, $3, $4)
-                RETURNING query_id, group_index, group_order, chunk_id, image_chunk_id
+                INSERT INTO retrieval_relation (query_id, group_index, group_order, image_chunk_id, score)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING query_id, group_index, group_order, chunk_id, image_chunk_id, score
                 "#,
             )
             .bind(query.id)
             .bind(group_index as i32)
             .bind(group_order as i32)
-            .bind(chunk_id)
+            .bind(evidence.chunk_id)
+            .bind(evidence.score)
             .fetch_one(&pool)
             .await?;
 
@@ -56,7 +57,7 @@ pub async fn create_query(
                 WHERE id = $1
                 "#,
             )
-            .bind(chunk_id)
+            .bind(evidence.chunk_id)
             .fetch_optional(&pool)
             .await?;
 
@@ -196,7 +197,7 @@ pub async fn get_query_with_evidence(
     // Fetch all relations ordered by group_index, then group_order
     let relations = sqlx::query_as::<_, RetrievalRelation>(
         r#"
-        SELECT query_id, group_index, group_order, chunk_id, image_chunk_id
+        SELECT query_id, group_index, group_order, chunk_id, image_chunk_id, score
         FROM retrieval_relation
         WHERE query_id = $1
         ORDER BY group_index ASC, group_order ASC
@@ -292,17 +293,19 @@ pub async fn add_retrieval_relation(
 
     let next_order = max_order.0.map(|o| o + 1).unwrap_or(0);
 
+    let score = request.score.unwrap_or(1); // Default to 1 (somewhat relevant)
     let relation = sqlx::query_as::<_, RetrievalRelation>(
         r#"
-        INSERT INTO retrieval_relation (query_id, group_index, group_order, image_chunk_id)
-        VALUES ($1, $2, $3, $4)
-        RETURNING query_id, group_index, group_order, chunk_id, image_chunk_id
+        INSERT INTO retrieval_relation (query_id, group_index, group_order, image_chunk_id, score)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING query_id, group_index, group_order, chunk_id, image_chunk_id, score
         "#,
     )
     .bind(request.query_id)
     .bind(request.group_index)
     .bind(next_order)
     .bind(request.image_chunk_id)
+    .bind(score)
     .fetch_one(&pool)
     .await?;
 
@@ -461,4 +464,30 @@ pub async fn reorder_evidence(
     .await?;
 
     Ok(true)
+}
+
+/// Update the score of an existing retrieval relation
+#[tauri::command]
+pub async fn update_retrieval_score(
+    request: UpdateScoreRequest,
+    state: State<'_, AppState>,
+) -> Result<RetrievalRelation> {
+    let pool = state.get_pool().await.ok_or(AppError::NotConnected)?;
+
+    let relation = sqlx::query_as::<_, RetrievalRelation>(
+        r#"
+        UPDATE retrieval_relation
+        SET score = $4
+        WHERE query_id = $1 AND group_index = $2 AND group_order = $3
+        RETURNING query_id, group_index, group_order, chunk_id, image_chunk_id, score
+        "#,
+    )
+    .bind(request.query_id)
+    .bind(request.group_index)
+    .bind(request.group_order)
+    .bind(request.score)
+    .fetch_one(&pool)
+    .await?;
+
+    Ok(relation)
 }

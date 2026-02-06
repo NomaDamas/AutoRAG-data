@@ -25,3 +25,5 @@ dist-ssr
 LOCAL_NOTES.md
 .env
 target/
+
+postgresql/pgdata/

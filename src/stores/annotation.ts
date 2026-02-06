@@ -18,6 +18,7 @@ export interface RetrievalRelation {
   group_order: number
   chunk_id: number | null
   image_chunk_id: number | null
+  score: number // 0=not relevant, 1=somewhat relevant, 2=highly relevant
 }
 
 export interface EvidenceItem {
@@ -36,17 +37,30 @@ export interface QueryWithEvidence {
   evidence_groups: EvidenceGroup[]
 }
 
+export interface EvidenceWithScore {
+  chunk_id: number
+  score: number // 0=not relevant, 1=somewhat relevant, 2=highly relevant
+}
+
 export interface CreateQueryRequest {
   contents: string
   query_to_llm: string | null
   generation_gt: string[] | null
-  evidence_groups: number[][] // Vec of groups, each group is Vec of image_chunk_ids
+  evidence_groups: EvidenceWithScore[][] // Vec of groups, each group is Vec of {chunk_id, score}
 }
 
 export interface AddEvidenceRequest {
   query_id: number
   group_index: number
   image_chunk_id: number
+  score?: number // Default to 1 if not provided
+}
+
+export interface UpdateScoreRequest {
+  query_id: number
+  group_index: number
+  group_order: number
+  score: number
 }
 
 export const useAnnotationStore = defineStore('annotation', () => {
@@ -113,9 +127,8 @@ export const useAnnotationStore = defineStore('annotation', () => {
     error.value = null
 
     try {
-      // Build evidence groups from selected chunks
-      // For now, put all selected chunks in a single group (group 0)
-      const evidenceGroups: number[][] = [selectionStore.selectedChunkIds]
+      // Build evidence groups from selection store grouping
+      const evidenceGroups: EvidenceWithScore[][] = selectionStore.evidenceGroups
 
       const request: CreateQueryRequest = {
         contents: draftContents.value.trim(),
@@ -221,6 +234,8 @@ export const useAnnotationStore = defineStore('annotation', () => {
       if (draftGenerationGt.value.length === 0) {
         draftGenerationGt.value = ['']
       }
+      // Restore evidence groups from loaded query
+      selectionStore.restoreFromEvidenceGroups(queryWithEvidence.evidence_groups)
     }
   }
 

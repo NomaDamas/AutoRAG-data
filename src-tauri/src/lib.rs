@@ -71,6 +71,7 @@ pub fn run() {
             commands::remove_retrieval_relation,
             commands::remove_evidence_group,
             commands::reorder_evidence,
+            commands::update_retrieval_score,
             // Ingest commands
             commands::ingest_pdf,
             commands::ingest_images,

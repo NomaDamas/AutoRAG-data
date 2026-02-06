@@ -9,7 +9,7 @@ export {
   type FileWithDocuments,
   type DocumentWithPages,
 } from './documents'
-export { useSelectionStore } from './selection'
+export { useSelectionStore, type EvidenceWithScore } from './selection'
 export {
   useAnnotationStore,
   type Query,
@@ -19,6 +19,7 @@ export {
   type QueryWithEvidence,
   type CreateQueryRequest,
   type AddEvidenceRequest,
+  type UpdateScoreRequest,
 } from './annotation'
 export { useUiStore } from './ui'
 export {
