@@ -11,7 +11,7 @@ const selectionStore = useSelectionStore()
 const uiStore = useUiStore()
 
 async function selectDocument(documentId: number) {
-  selectionStore.clearSelection()
+  selectionStore.clearFocus()
   await documentsStore.selectDocument(documentId)
 }
 

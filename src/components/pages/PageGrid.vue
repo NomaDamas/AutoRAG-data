@@ -58,10 +58,17 @@ const gridCols = computed(() => {
 })
 
 function handlePageClick(pageId: number, event: MouseEvent) {
-  selectionStore.togglePage(pageId, {
-    shiftKey: event.shiftKey,
-    metaKey: event.metaKey,
-  })
+  if (event.metaKey || event.ctrlKey) {
+    // Cmd+click: toggle evidence membership
+    selectionStore.toggleEvidence(pageId)
+  } else {
+    // Plain click: focus page
+    selectionStore.focusPage(pageId)
+  }
+}
+
+function handleToggleEvidence(pageId: number) {
+  selectionStore.toggleEvidence(pageId)
 }
 
 const documentTitle = computed(() => {
@@ -79,20 +86,14 @@ const documentTitle = computed(() => {
         {{ documentTitle }}
       </h2>
       <div class="flex items-center gap-4">
-        <!-- Selection Controls -->
+        <!-- Evidence Controls -->
         <div v-if="selectionStore.hasSelection" class="flex items-center gap-2">
-          <span class="text-xs text-gray-400">
-            {{ selectionStore.selectedCount }} selected
+          <span class="text-xs text-amber-400">
+            {{ selectionStore.selectedCount }} in evidence
           </span>
           <button
-            class="text-xs text-blue-400 hover:text-blue-300"
-            @click="selectionStore.selectAll()"
-          >
-            Select all
-          </button>
-          <button
             class="text-xs text-gray-400 hover:text-gray-300"
-            @click="selectionStore.clearSelection()"
+            @click="selectionStore.clearEvidence()"
           >
             Clear
           </button>
@@ -155,10 +156,12 @@ const documentTitle = computed(() => {
           :key="pageWithChunks.page.id"
           :page="pageWithChunks.page"
           :chunks="pageWithChunks.chunks"
-          :is-selected="selectionStore.isSelected(pageWithChunks.page.id)"
+          :is-focused="selectionStore.focusedPageId === pageWithChunks.page.id"
+          :is-in-evidence="selectionStore.isInEvidence(pageWithChunks.page.id)"
           :show-page-number="uiStore.showPageNumbers"
           :thumbnail-url="documentsStore.getThumbnailUrl(pageWithChunks.page.id)"
           @click="handlePageClick(pageWithChunks.page.id, $event)"
+          @toggle-evidence="handleToggleEvidence(pageWithChunks.page.id)"
         />
       </div>
     </div>

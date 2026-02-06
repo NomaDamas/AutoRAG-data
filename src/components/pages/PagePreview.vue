@@ -6,10 +6,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useDocumentsStore, useUiStore } from '@/stores'
+import { useDocumentsStore, useSelectionStore, useUiStore } from '@/stores'
 
 const documentsStore = useDocumentsStore()
+const selectionStore = useSelectionStore()
 const uiStore = useUiStore()
 
 const previewUrl = ref<string | null>(null)
@@ -17,10 +19,19 @@ const isLoadingPreview = ref(false)
 
 const previewPage = computed(() => {
   if (uiStore.previewPageId === null) return null
+  // Try current document pages first
   const pageWithChunks = documentsStore.currentPages.find(
     (pw) => pw.page.id === uiStore.previewPageId
   )
-  return pageWithChunks?.page ?? null
+  if (pageWithChunks) return pageWithChunks.page
+  // Fallback to evidence items (cross-doc)
+  const evidenceItem = selectionStore.evidenceItems.get(uiStore.previewPageId)
+  return evidenceItem?.page ?? null
+})
+
+const isPageInEvidence = computed(() => {
+  if (uiStore.previewPageId === null) return false
+  return selectionStore.isInEvidence(uiStore.previewPageId)
 })
 
 watch(
@@ -45,6 +56,12 @@ watch(
 
 function handleClose() {
   uiStore.closePreview()
+}
+
+function handleToggleEvidence() {
+  if (uiStore.previewPageId !== null) {
+    selectionStore.toggleEvidence(uiStore.previewPageId)
+  }
 }
 </script>
 
@@ -79,10 +96,25 @@ function handleClose() {
       </div>
 
       <div class="flex items-center justify-between text-sm text-gray-400">
-        <div v-if="previewPage">
-          Page {{ previewPage.page_num }}
+        <div class="flex items-center gap-3">
+          <span v-if="previewPage">
+            Page {{ previewPage.page_num }}
+          </span>
+          <Button
+            v-if="uiStore.previewPageId !== null"
+            size="sm"
+            :variant="isPageInEvidence ? 'secondary' : 'outline'"
+            :class="isPageInEvidence
+              ? 'bg-amber-600/80 text-white hover:bg-amber-700'
+              : 'border-gray-600 hover:bg-amber-600/80 hover:text-white hover:border-amber-600'"
+            @click="handleToggleEvidence"
+          >
+            <span v-if="isPageInEvidence" class="i-mdi-check mr-1" />
+            <span v-else class="i-mdi-plus mr-1" />
+            {{ isPageInEvidence ? 'In evidence' : 'Add to evidence' }}
+          </Button>
         </div>
-        <div class="text-xs">Press Space to quick preview selected page</div>
+        <div class="text-xs">Press Enter to preview focused page</div>
       </div>
     </DialogContent>
   </Dialog>

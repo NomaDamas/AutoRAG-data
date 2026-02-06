@@ -1,10 +1,19 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { useDocumentsStore, type PageWithChunks } from './documents'
+import { useDocumentsStore, type PageInfo, type ImageChunkInfo, type PageWithChunks } from './documents'
 
 export interface EvidenceWithScore {
   chunk_id: number
   score: number
+}
+
+// Stores everything needed to display evidence without depending on currentPages
+export interface EvidencePageItem {
+  page: PageInfo
+  chunks: ImageChunkInfo[]
+  documentId: number
+  documentTitle: string
+  thumbnailUrl?: string
 }
 
 // Minimal shape for restoring evidence groups (avoids circular import with annotation store)
@@ -13,13 +22,17 @@ interface EvidenceGroupLike {
   items: {
     relation?: { score: number } | null
     chunk?: { id: number } | null
-    page?: { id: number } | null
+    page?: { id: number; page_num: number; document_id: number; mimetype: string | null } | null
   }[]
 }
 
 export const useSelectionStore = defineStore('selection', () => {
-  const selectedPageIds = ref<Set<number>>(new Set())
-  const lastSelectedId = ref<number | null>(null)
+  // FOCUS (browsing, transient, current-doc)
+  const focusedPageId = ref<number | null>(null)
+
+  // EVIDENCE CART (persistent, cross-doc)
+  const evidenceItems = ref<Map<number, EvidencePageItem>>(new Map()) // pageId → item
+
   // Map from chunk_id to score (default is 1 = somewhat relevant)
   const chunkScores = ref<Map<number, number>>(new Map())
 
@@ -29,18 +42,23 @@ export const useSelectionStore = defineStore('selection', () => {
 
   const documentsStore = useDocumentsStore()
 
-  const selectedCount = computed(() => selectedPageIds.value.size)
-  const hasSelection = computed(() => selectedPageIds.value.size > 0)
+  // Backward-compatible computeds
+  const selectedPageIds = computed(() => new Set(evidenceItems.value.keys()))
+  const selectedCount = computed(() => evidenceItems.value.size)
+  const hasSelection = computed(() => evidenceItems.value.size > 0)
 
   const selectedPages = computed((): PageWithChunks[] => {
-    return documentsStore.currentPages.filter((pw) => selectedPageIds.value.has(pw.page.id))
+    return Array.from(evidenceItems.value.values()).map((item) => ({
+      page: item.page,
+      chunks: item.chunks,
+    }))
   })
 
   // Get all chunk IDs from selected pages
   const selectedChunkIds = computed((): number[] => {
     const chunkIds: number[] = []
-    for (const pageWithChunks of selectedPages.value) {
-      for (const chunk of pageWithChunks.chunks) {
+    for (const item of evidenceItems.value.values()) {
+      for (const chunk of item.chunks) {
         chunkIds.push(chunk.id)
       }
     }
@@ -50,11 +68,11 @@ export const useSelectionStore = defineStore('selection', () => {
   // Get all chunks with their scores for creating queries
   const selectedChunksWithScores = computed((): EvidenceWithScore[] => {
     const result: EvidenceWithScore[] = []
-    for (const pageWithChunks of selectedPages.value) {
-      for (const chunk of pageWithChunks.chunks) {
+    for (const item of evidenceItems.value.values()) {
+      for (const chunk of item.chunks) {
         result.push({
           chunk_id: chunk.id,
-          score: chunkScores.value.get(chunk.id) ?? 1, // Default to 1 (somewhat relevant)
+          score: chunkScores.value.get(chunk.id) ?? 1,
         })
       }
     }
@@ -62,11 +80,10 @@ export const useSelectionStore = defineStore('selection', () => {
   })
 
   // Evidence groups: each group is an array of EvidenceWithScore
-  // and_all: each page's chunks are their own group (AND semantics)
-  // custom: groups defined by customGroups
   const evidenceGroups = computed((): EvidenceWithScore[][] => {
+    const pages = selectedPages.value
     if (groupingMode.value === 'and_all') {
-      return selectedPages.value.map((pw) =>
+      return pages.map((pw) =>
         pw.chunks.map((chunk) => ({
           chunk_id: chunk.id,
           score: chunkScores.value.get(chunk.id) ?? 1,
@@ -80,7 +97,7 @@ export const useSelectionStore = defineStore('selection', () => {
       .map((group) => {
         const chunks: EvidenceWithScore[] = []
         for (const pageId of group) {
-          const pw = selectedPages.value.find((pg) => pg.page.id === pageId)
+          const pw = pages.find((pg) => pg.page.id === pageId)
           if (pw) {
             for (const chunk of pw.chunks) {
               chunks.push({
@@ -97,8 +114,9 @@ export const useSelectionStore = defineStore('selection', () => {
 
   // Grouped pages for UI rendering
   const groupedPages = computed((): { groupIndex: number; pages: PageWithChunks[] }[] => {
+    const pages = selectedPages.value
     if (groupingMode.value === 'and_all') {
-      return selectedPages.value.map((pw, i) => ({
+      return pages.map((pw, i) => ({
         groupIndex: i,
         pages: [pw],
       }))
@@ -107,115 +125,104 @@ export const useSelectionStore = defineStore('selection', () => {
     // custom mode
     return customGroups.value
       .map((group, idx) => {
-        const pages = Array.from(group)
-          .map((pageId) => selectedPages.value.find((pg) => pg.page.id === pageId))
+        const groupPages = Array.from(group)
+          .map((pageId) => pages.find((pg) => pg.page.id === pageId))
           .filter((pg): pg is PageWithChunks => pg !== undefined)
-        return { groupIndex: idx, pages }
+        return { groupIndex: idx, pages: groupPages }
       })
       .filter((grp) => grp.pages.length > 0)
   })
 
+  // Get all page IDs from selected pages
+  const selectedPageIdsList = computed((): number[] => {
+    return Array.from(evidenceItems.value.keys())
+  })
+
   function getChunkScore(chunkId: number): number {
-    return chunkScores.value.get(chunkId) ?? 1 // Default to 1 (somewhat relevant)
+    return chunkScores.value.get(chunkId) ?? 1
   }
 
   function setChunkScore(chunkId: number, score: number) {
     chunkScores.value.set(chunkId, score)
   }
 
-  // Get all page IDs from selected pages (for when chunks aren't available)
-  const selectedPageIdsList = computed((): number[] => {
-    return Array.from(selectedPageIds.value)
-  })
+  // --- Focus methods (browsing, transient, current-doc) ---
 
-  function isSelected(pageId: number): boolean {
-    return selectedPageIds.value.has(pageId)
+  function focusPage(pageId: number) {
+    focusedPageId.value = pageId
   }
 
-  function togglePage(pageId: number, event?: { shiftKey?: boolean; metaKey?: boolean }) {
-    if (event?.shiftKey && lastSelectedId.value !== null) {
-      // Shift+click: select range
-      selectRange(lastSelectedId.value, pageId)
-    } else if (event?.metaKey) {
-      // Cmd+click: toggle single
-      if (selectedPageIds.value.has(pageId)) {
-        selectedPageIds.value.delete(pageId)
-      } else {
-        selectedPageIds.value.add(pageId)
-        lastSelectedId.value = pageId
+  function clearFocus() {
+    focusedPageId.value = null
+  }
+
+  // --- Evidence methods (persistent, cross-doc) ---
+
+  function isInEvidence(pageId: number): boolean {
+    return evidenceItems.value.has(pageId)
+  }
+
+  function addEvidence(pageId: number) {
+    if (evidenceItems.value.has(pageId)) return
+
+    // Try to find page data from current document's pages
+    const pageWithChunks = documentsStore.currentPages.find((pw) => pw.page.id === pageId)
+    if (!pageWithChunks) return
+
+    const docInfo = documentsStore.currentDocumentInfo
+    const docTitle = docInfo?.title || docInfo?.filename || 'Untitled'
+    const thumbnailUrl = documentsStore.getThumbnailUrl(pageId)
+
+    const item: EvidencePageItem = {
+      page: { ...pageWithChunks.page },
+      chunks: [...pageWithChunks.chunks],
+      documentId: pageWithChunks.page.document_id,
+      documentTitle: docTitle,
+      thumbnailUrl: thumbnailUrl || undefined,
+    }
+
+    evidenceItems.value.set(pageId, item)
+    syncCustomGroupsAfterSelectionChange()
+  }
+
+  function removeEvidence(pageId: number) {
+    // Clean up chunk scores for removed page before deleting
+    const item = evidenceItems.value.get(pageId)
+    if (item) {
+      for (const chunk of item.chunks) {
+        chunkScores.value.delete(chunk.id)
       }
-    } else {
-      // Regular click: select only this one
-      selectedPageIds.value.clear()
-      selectedPageIds.value.add(pageId)
-      lastSelectedId.value = pageId
-    }
-    syncCustomGroupsAfterSelectionChange()
-  }
-
-  function selectRange(fromId: number, toId: number) {
-    const allPages = documentsStore.currentPages
-    const fromIndex = allPages.findIndex((pw) => pw.page.id === fromId)
-    const toIndex = allPages.findIndex((pw) => pw.page.id === toId)
-
-    if (fromIndex === -1 || toIndex === -1) return
-
-    const start = Math.min(fromIndex, toIndex)
-    const end = Math.max(fromIndex, toIndex)
-
-    for (let idx = start; idx <= end; idx++) {
-      // eslint-disable-next-line security/detect-object-injection -- safe array index access
-      const pageAtIndex = allPages[idx]
-      if (pageAtIndex) {
-        selectedPageIds.value.add(pageAtIndex.page.id)
-      }
     }
 
-    lastSelectedId.value = toId
-    syncCustomGroupsAfterSelectionChange()
-  }
+    evidenceItems.value.delete(pageId)
 
-  function selectAll() {
-    const pages = documentsStore.currentPages
-    for (const page of pages) {
-      selectedPageIds.value.add(page.page.id)
-    }
-    const lastPage = pages[pages.length - 1]
-    if (lastPage) {
-      lastSelectedId.value = lastPage.page.id
-    }
-    syncCustomGroupsAfterSelectionChange()
-  }
-
-  function clearSelection() {
-    selectedPageIds.value.clear()
-    lastSelectedId.value = null
-    chunkScores.value.clear()
-    customGroups.value = []
-    groupingMode.value = 'and_all'
-  }
-
-  function selectPage(pageId: number) {
-    selectedPageIds.value.clear()
-    selectedPageIds.value.add(pageId)
-    lastSelectedId.value = pageId
-    syncCustomGroupsAfterSelectionChange()
-  }
-
-  function addToSelection(pageId: number) {
-    selectedPageIds.value.add(pageId)
-    lastSelectedId.value = pageId
-    syncCustomGroupsAfterSelectionChange()
-  }
-
-  function removeFromSelection(pageId: number) {
-    selectedPageIds.value.delete(pageId)
     if (groupingMode.value === 'custom') {
       for (const group of customGroups.value) {
         group.delete(pageId)
       }
       cleanupEmptyGroups()
     }
+    syncCustomGroupsAfterSelectionChange()
+  }
+
+  function toggleEvidence(pageId: number) {
+    if (evidenceItems.value.has(pageId)) {
+      removeEvidence(pageId)
+    } else {
+      addEvidence(pageId)
+    }
+  }
+
+  function clearEvidence() {
+    evidenceItems.value.clear()
+    chunkScores.value.clear()
+    customGroups.value = []
+    groupingMode.value = 'and_all'
+  }
+
+  // Backward compat alias
+  function isSelected(pageId: number): boolean {
+    return evidenceItems.value.has(pageId)
   }
 
   // --- Grouping methods ---
@@ -224,12 +231,10 @@ export const useSelectionStore = defineStore('selection', () => {
     if (mode === groupingMode.value) return
 
     if (mode === 'custom') {
-      // Initialize: each selected page as its own group
-      customGroups.value = Array.from(selectedPageIds.value).map(
+      customGroups.value = Array.from(evidenceItems.value.keys()).map(
         (pageId) => new Set([pageId]),
       )
     }
-    // Switching to and_all: custom groups are discarded (computed handles it)
 
     groupingMode.value = mode
   }
@@ -237,12 +242,10 @@ export const useSelectionStore = defineStore('selection', () => {
   function mergeIntoGroup(targetGroupIndex: number, pageId: number) {
     if (groupingMode.value !== 'custom') return
 
-    // Remove from current group
     for (const group of customGroups.value) {
       group.delete(pageId)
     }
 
-    // Add to target group
     // eslint-disable-next-line security/detect-object-injection -- safe array index from internal grouping logic
     const target = customGroups.value[targetGroupIndex]
     if (target) {
@@ -255,12 +258,10 @@ export const useSelectionStore = defineStore('selection', () => {
   function splitToNewGroup(pageId: number) {
     if (groupingMode.value !== 'custom') return
 
-    // Remove from current group
     for (const group of customGroups.value) {
       group.delete(pageId)
     }
 
-    // Create new group
     customGroups.value.push(new Set([pageId]))
 
     cleanupEmptyGroups()
@@ -273,6 +274,8 @@ export const useSelectionStore = defineStore('selection', () => {
   function syncCustomGroupsAfterSelectionChange() {
     if (groupingMode.value !== 'custom') return
 
+    const currentEvidenceIds = evidenceItems.value
+
     // Track which pages are already in a group
     const pagesInGroups = new Set<number>()
     for (const group of customGroups.value) {
@@ -282,7 +285,7 @@ export const useSelectionStore = defineStore('selection', () => {
     }
 
     // Add new pages as new solo groups
-    for (const pageId of selectedPageIds.value) {
+    for (const pageId of currentEvidenceIds.keys()) {
       if (!pagesInGroups.has(pageId)) {
         customGroups.value.push(new Set([pageId]))
       }
@@ -291,7 +294,7 @@ export const useSelectionStore = defineStore('selection', () => {
     // Purge removed pages from groups
     for (const group of customGroups.value) {
       for (const pageId of group) {
-        if (!selectedPageIds.value.has(pageId)) {
+        if (!currentEvidenceIds.has(pageId)) {
           group.delete(pageId)
         }
       }
@@ -302,11 +305,9 @@ export const useSelectionStore = defineStore('selection', () => {
 
   // Restore groups from loaded query evidence
   function restoreFromEvidenceGroups(evidenceGroupsData: EvidenceGroupLike[]) {
-    // Clear existing state
-    selectedPageIds.value.clear()
+    evidenceItems.value.clear()
     chunkScores.value.clear()
 
-    // Build page-to-group mapping from evidence
     const groupPageSets: Set<number>[] = []
 
     for (const eg of evidenceGroupsData) {
@@ -314,7 +315,49 @@ export const useSelectionStore = defineStore('selection', () => {
       for (const item of eg.items) {
         if (item.page) {
           const pageId = item.page.id
-          selectedPageIds.value.add(pageId)
+
+          // Build EvidencePageItem from evidence data
+          // Try current doc pages first, then build from evidence data
+          const currentPageData = documentsStore.currentPages.find((pw) => pw.page.id === pageId)
+          const docInfo = documentsStore.currentDocumentInfo
+
+          if (currentPageData) {
+            const docTitle = docInfo?.title || docInfo?.filename || 'Untitled'
+            evidenceItems.value.set(pageId, {
+              page: { ...currentPageData.page },
+              chunks: [...currentPageData.chunks],
+              documentId: currentPageData.page.document_id,
+              documentTitle: docTitle,
+              thumbnailUrl: documentsStore.getThumbnailUrl(pageId) || undefined,
+            })
+          } else {
+            // Build from evidence data (cross-doc case or page not in current doc)
+            const chunks: ImageChunkInfo[] = []
+            // Collect chunks for this page from all items in the group
+            for (const groupItem of eg.items) {
+              if (groupItem.page?.id === pageId && groupItem.chunk) {
+                chunks.push({
+                  id: groupItem.chunk.id,
+                  parent_page: pageId,
+                  mimetype: 'image/png', // default, actual mimetype comes from chunk data
+                })
+              }
+            }
+            evidenceItems.value.set(pageId, {
+              page: {
+                id: item.page.id,
+                page_num: item.page.page_num,
+                document_id: item.page.document_id,
+                mimetype: item.page.mimetype,
+                page_metadata: null,
+              },
+              chunks,
+              documentId: item.page.document_id,
+              documentTitle: `Document ${item.page.document_id}`,
+              thumbnailUrl: documentsStore.getThumbnailUrl(pageId) || undefined,
+            })
+          }
+
           pageIdsInGroup.add(pageId)
         }
         if (item.chunk && item.relation) {
@@ -326,11 +369,10 @@ export const useSelectionStore = defineStore('selection', () => {
       }
     }
 
-    // Determine mode: if every group has exactly one unique page, it's and_all
+    // Determine mode
     const isAndAll =
       groupPageSets.length > 0 &&
       groupPageSets.every((grp) => grp.size === 1) &&
-      // Also check that no two groups share the same page
       new Set(groupPageSets.flatMap((grp) => Array.from(grp))).size === groupPageSets.length
 
     if (isAndAll) {
@@ -343,9 +385,21 @@ export const useSelectionStore = defineStore('selection', () => {
   }
 
   return {
+    // Focus state
+    focusedPageId,
+    focusPage,
+    clearFocus,
+
+    // Evidence state
+    evidenceItems,
+    addEvidence,
+    removeEvidence,
+    toggleEvidence,
+    clearEvidence,
+    isInEvidence,
+
+    // Backward-compatible computeds
     selectedPageIds,
-    lastSelectedId,
-    chunkScores,
     selectedCount,
     hasSelection,
     selectedPages,
@@ -353,15 +407,12 @@ export const useSelectionStore = defineStore('selection', () => {
     selectedChunksWithScores,
     selectedPageIdsList,
     isSelected,
-    togglePage,
-    selectRange,
-    selectAll,
-    clearSelection,
-    selectPage,
-    addToSelection,
-    removeFromSelection,
+
+    // Scores
+    chunkScores,
     getChunkScore,
     setChunkScore,
+
     // Grouping
     groupingMode,
     customGroups,

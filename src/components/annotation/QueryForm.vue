@@ -15,13 +15,13 @@ async function handleSave() {
     const result = await annotationStore.updateQuery()
     if (result) {
       showSaveSuccess()
-      selectionStore.clearSelection()
+      selectionStore.clearEvidence()
     }
   } else {
     const result = await annotationStore.saveQuery()
     if (result) {
       showSaveSuccess()
-      selectionStore.clearSelection()
+      selectionStore.clearEvidence()
     }
   }
 }

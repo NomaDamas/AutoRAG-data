@@ -5,12 +5,7 @@ import { usePageSelection } from './usePageSelection'
 export function useKeyboardShortcuts() {
   const selectionStore = useSelectionStore()
   const uiStore = useUiStore()
-  const {
-    selectNextPage,
-    selectPreviousPage,
-    extendSelectionNext,
-    extendSelectionPrevious,
-  } = usePageSelection()
+  const { focusNextPage, focusPreviousPage } = usePageSelection()
 
   function handleKeyDown(event: KeyboardEvent) {
     // Ignore if we're in an input field
@@ -21,56 +16,35 @@ export function useKeyboardShortcuts() {
       return
     }
 
-    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
-    const cmdOrCtrl = isMac ? event.metaKey : event.ctrlKey
-
-    // Arrow navigation
+    // Arrow navigation (focus only, does not affect evidence)
     if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
       event.preventDefault()
-      if (event.shiftKey) {
-        extendSelectionNext()
-      } else {
-        selectNextPage()
-      }
+      focusNextPage()
       return
     }
 
     if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
       event.preventDefault()
-      if (event.shiftKey) {
-        extendSelectionPrevious()
-      } else {
-        selectPreviousPage()
-      }
+      focusPreviousPage()
       return
     }
 
-    // Select all (Cmd/Ctrl + A)
-    if (cmdOrCtrl && event.key === 'a') {
-      event.preventDefault()
-      selectionStore.selectAll()
-      return
-    }
-
-    // Escape to clear selection or close modals
+    // Escape: close modals → clear focus (NOT evidence)
     if (event.key === 'Escape') {
       if (uiStore.isPreviewModalOpen) {
         uiStore.closePreview()
       } else if (uiStore.isConnectionDialogOpen) {
         uiStore.closeConnectionDialog()
-      } else if (selectionStore.hasSelection) {
-        selectionStore.clearSelection()
+      } else {
+        selectionStore.clearFocus()
       }
       return
     }
 
-    // Enter to open preview of selected page
-    if (event.key === 'Enter' && selectionStore.selectedCount === 1) {
+    // Enter to open preview of focused page
+    if (event.key === 'Enter' && selectionStore.focusedPageId !== null) {
       event.preventDefault()
-      const selectedId = Array.from(selectionStore.selectedPageIds)[0]
-      if (selectedId !== undefined) {
-        uiStore.openPreview(selectedId)
-      }
+      uiStore.openPreview(selectionStore.focusedPageId)
       return
     }
   }

@@ -17,21 +17,18 @@ export function useQuickPreview() {
       return
     }
 
-    // Space key for quick preview
+    // Space key for quick preview of focused page
     if (event.code === 'Space' && !event.repeat) {
       event.preventDefault()
 
-      // Only preview if exactly one page is selected
-      if (selectionStore.selectedCount === 1) {
-        const selectedId = Array.from(selectionStore.selectedPageIds)[0]
-        if (selectedId !== undefined) {
-          isPreviewActive.value = true
+      const focusedId = selectionStore.focusedPageId
+      if (focusedId !== null) {
+        isPreviewActive.value = true
 
-          // Small delay before showing preview to avoid flicker on quick taps
-          previewTimeout = setTimeout(() => {
-            uiStore.openPreview(selectedId)
-          }, 150)
-        }
+        // Small delay before showing preview to avoid flicker on quick taps
+        previewTimeout = setTimeout(() => {
+          uiStore.openPreview(focusedId)
+        }, 150)
       }
     }
   }

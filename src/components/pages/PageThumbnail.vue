@@ -5,25 +5,34 @@ import type { PageInfo, ImageChunkInfo } from '@/stores/documents'
 const props = defineProps<{
   page: PageInfo
   chunks: ImageChunkInfo[]
-  isSelected: boolean
+  isFocused: boolean
+  isInEvidence: boolean
   showPageNumber: boolean
   thumbnailUrl?: string
 }>()
 
 const emit = defineEmits<{
   click: [event: MouseEvent]
+  'toggle-evidence': []
 }>()
 
 const hasChunks = computed(() => props.chunks.length > 0)
+
+function handleToggleEvidence(event: MouseEvent) {
+  event.stopPropagation()
+  emit('toggle-evidence')
+}
 </script>
 
 <template>
   <button
     class="group relative aspect-[3/4] w-full overflow-hidden rounded-lg bg-gray-800 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500"
     :class="[
-      isSelected
-        ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900'
-        : 'hover:ring-2 hover:ring-gray-600',
+      isInEvidence
+        ? 'ring-2 ring-amber-500 ring-offset-2 ring-offset-gray-900'
+        : isFocused
+          ? 'ring-2 ring-blue-500 ring-offset-2 ring-offset-gray-900'
+          : 'hover:ring-2 hover:ring-gray-600',
     ]"
     @click="emit('click', $event)"
   >
@@ -41,13 +50,25 @@ const hasChunks = computed(() => props.chunks.length > 0)
       <span class="i-mdi-file-document-outline text-4xl text-gray-500" />
     </div>
 
-    <!-- Selection Indicator -->
-    <div
-      v-if="isSelected"
-      class="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-blue-500"
+    <!-- Evidence Checkmark Badge (shown when in evidence) -->
+    <button
+      v-if="isInEvidence"
+      class="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 hover:bg-amber-400 transition-colors"
+      title="Remove from evidence"
+      @click="handleToggleEvidence"
     >
       <span class="i-mdi-check text-white" />
-    </div>
+    </button>
+
+    <!-- Add to Evidence Button (shown on hover when NOT in evidence) -->
+    <button
+      v-else
+      class="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-gray-700/80 opacity-0 transition-opacity group-hover:opacity-100 hover:bg-amber-500"
+      title="Add to evidence"
+      @click="handleToggleEvidence"
+    >
+      <span class="i-mdi-plus text-white" />
+    </button>
 
     <!-- Chunk Badge -->
     <div
@@ -67,7 +88,8 @@ const hasChunks = computed(() => props.chunks.length > 0)
 
     <!-- Hover Overlay -->
     <div
-      class="absolute inset-0 bg-blue-500/0 transition-colors group-hover:bg-blue-500/10"
+      class="pointer-events-none absolute inset-0 bg-blue-500/0 transition-colors group-hover:bg-blue-500/10"
+      :class="isInEvidence && 'group-hover:bg-amber-500/10'"
     />
   </button>
 </template>

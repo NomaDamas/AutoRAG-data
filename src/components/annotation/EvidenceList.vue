@@ -9,11 +9,23 @@ const selectionStore = useSelectionStore()
 const uiStore = useUiStore()
 
 function getPageInfo(pageWithChunks: PageWithChunks) {
+  const evidenceItem = selectionStore.evidenceItems.get(pageWithChunks.page.id)
   return {
     ...pageWithChunks,
-    thumbnailUrl: documentsStore.getThumbnailUrl(pageWithChunks.page.id),
+    thumbnailUrl: evidenceItem?.thumbnailUrl || documentsStore.getThumbnailUrl(pageWithChunks.page.id),
     score: pageWithChunks.chunks[0] ? selectionStore.getChunkScore(pageWithChunks.chunks[0].id) : 1,
+    documentTitle: evidenceItem?.documentTitle ?? 'Untitled',
+    documentId: evidenceItem?.documentId ?? pageWithChunks.page.document_id,
   }
+}
+
+function getItemLabel(pageWithChunks: PageWithChunks) {
+  const info = getPageInfo(pageWithChunks)
+  const currentDocId = documentsStore.currentDocumentInfo?.id
+  if (info.documentId === currentDocId) {
+    return `Page ${pageWithChunks.page.page_num}`
+  }
+  return `${info.documentTitle} — Page ${pageWithChunks.page.page_num}`
 }
 
 function handlePreview(pageId: number) {
@@ -21,7 +33,7 @@ function handlePreview(pageId: number) {
 }
 
 function handleRemove(pageId: number) {
-  selectionStore.removeFromSelection(pageId)
+  selectionStore.removeEvidence(pageId)
 }
 
 function handleSetScore(pageWithChunks: PageWithChunks, score: number) {
@@ -30,10 +42,18 @@ function handleSetScore(pageWithChunks: PageWithChunks, score: number) {
   }
 }
 
-const documentTitle = computed(() => {
-  const doc = documentsStore.currentDocumentInfo
-  if (!doc) return 'Untitled'
-  return doc.title || doc.filename || 'Untitled'
+// Summary: count unique documents
+const evidenceSummary = computed(() => {
+  const docIds = new Set<number>()
+  for (const item of selectionStore.evidenceItems.values()) {
+    docIds.add(item.documentId)
+  }
+  const pageCount = selectionStore.selectedCount
+  const docCount = docIds.size
+  if (docCount <= 1) {
+    return `${pageCount} page${pageCount > 1 ? 's' : ''} selected`
+  }
+  return `${pageCount} page${pageCount > 1 ? 's' : ''} from ${docCount} documents`
 })
 
 const scoreOptions = [
@@ -75,10 +95,10 @@ function findCurrentGroupIndex(pageId: number): number {
     >
       <span class="i-mdi-image-multiple-outline text-3xl text-gray-500 mb-2" />
       <p class="text-sm text-gray-500">
-        Click pages in the grid to add them as evidence
+        Click the + button on thumbnails to add evidence
       </p>
       <p class="text-xs text-gray-600 mt-1">
-        Use Cmd+click for multi-select, Shift+click for range
+        Use Cmd+click for quick toggle
       </p>
     </div>
 
@@ -135,7 +155,7 @@ function findCurrentGroupIndex(pageId: number): number {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium text-gray-200">
-              Page {{ item.page.page_num }}
+              {{ getItemLabel(item) }}
             </span>
             <Badge
               v-if="item.chunks.length > 0"
@@ -146,7 +166,7 @@ function findCurrentGroupIndex(pageId: number): number {
             </Badge>
           </div>
           <p class="text-xs text-gray-500 truncate">
-            {{ documentTitle }}
+            {{ getPageInfo(item).documentTitle }}
           </p>
         </div>
 
@@ -227,7 +247,7 @@ function findCurrentGroupIndex(pageId: number): number {
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-medium text-gray-200">
-                  Page {{ item.page.page_num }}
+                  {{ getItemLabel(item) }}
                 </span>
                 <Badge
                   v-if="item.chunks.length > 0"
@@ -238,7 +258,7 @@ function findCurrentGroupIndex(pageId: number): number {
                 </Badge>
               </div>
               <p class="text-xs text-gray-500 truncate">
-                {{ documentTitle }}
+                {{ getPageInfo(item).documentTitle }}
               </p>
             </div>
 
@@ -294,14 +314,14 @@ function findCurrentGroupIndex(pageId: number): number {
       class="flex items-center justify-between text-xs text-gray-500 pt-2"
     >
       <span v-if="selectionStore.groupingMode === 'and_all' || groupCount <= 1">
-        {{ selectionStore.selectedCount }} page{{ selectionStore.selectedCount > 1 ? 's' : '' }} selected
+        {{ evidenceSummary }}
       </span>
       <span v-else>
         {{ selectionStore.selectedCount }} page{{ selectionStore.selectedCount > 1 ? 's' : '' }} in {{ groupCount }} group{{ groupCount > 1 ? 's' : '' }}
       </span>
       <button
         class="text-gray-400 hover:text-gray-300"
-        @click="selectionStore.clearSelection()"
+        @click="selectionStore.clearEvidence()"
       >
         Clear all
       </button>
