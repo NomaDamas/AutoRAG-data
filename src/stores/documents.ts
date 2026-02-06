@@ -37,14 +37,16 @@ export interface PageWithChunks {
   chunks: ImageChunkInfo[]
 }
 
-export interface FileWithDocuments {
-  file: File
-  documents: Document[]
-}
-
 export interface DocumentWithPages {
   document: Document
   pages: PageWithChunks[]
+}
+
+interface PageSourceInfo {
+  page_id: number
+  chunk_ids: number[]
+  page_num: number
+  source_path: string | null
 }
 
 export const useDocumentsStore = defineStore('documents', () => {
@@ -52,20 +54,29 @@ export const useDocumentsStore = defineStore('documents', () => {
   const currentDocument = ref<DocumentWithPages | null>(null)
   const isLoading = ref(false)
   const error = ref<string | null>(null)
-  const thumbnailUrls = ref<Map<number, string>>(new Map())
+
+  // Source file path for the current document (from file table)
+  const sourceFilePath = ref<string | null>(null)
+
+  // Per-page source URLs: pageId → asset:// URL (for image docs) or null
+  const pageSourceUrls = ref<Map<number, string>>(new Map())
 
   const currentPages = computed(() => currentDocument.value?.pages ?? [])
   const currentDocumentInfo = computed(() => currentDocument.value?.document ?? null)
   const pageCount = computed(() => currentDocument.value?.pages.length ?? 0)
+
+  // Whether the current document is a PDF
+  const isPdf = computed(() => {
+    if (!sourceFilePath.value) return false
+    return sourceFilePath.value.toLowerCase().endsWith('.pdf')
+  })
 
   async function loadDocuments() {
     isLoading.value = true
     error.value = null
 
     try {
-      const result = await invoke<Document[]>('list_documents')
-      console.log('list_documents returned:', result)
-      documents.value = result
+      documents.value = await invoke<Document[]>('list_documents')
     } catch (err) {
       console.error('loadDocuments error:', err)
       error.value = err instanceof Error ? err.message : String(err)
@@ -83,88 +94,54 @@ export const useDocumentsStore = defineStore('documents', () => {
       currentDocument.value = await invoke<DocumentWithPages>('get_document_with_pages', {
         documentId,
       })
-      thumbnailUrls.value.clear()
+      pageSourceUrls.value.clear()
+
+      // Fetch source file path
+      sourceFilePath.value = await invoke<string | null>('get_source_file_url', { documentId })
+
+      // For non-PDF (image) documents, populate page source URLs
+      if (!isPdf.value) {
+        await loadPageSourceUrls(documentId)
+      }
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
       currentDocument.value = null
+      sourceFilePath.value = null
     } finally {
       isLoading.value = false
     }
-
-    // Non-blocking — thumbnails load in background and stream in reactively
-    loadThumbnails()
   }
 
-  async function loadThumbnails() {
-    if (!currentDocument.value) return
-
-    const documentId = currentDocument.value.document.id
-    const pages = currentDocument.value.pages
-
-    // Batch-generate all thumbnails server-side (1 query + bulk generation)
+  async function loadPageSourceUrls(documentId: number) {
     try {
-      await invoke('prefetch_document_thumbnails', { documentId })
-    } catch (err) {
-      console.error('prefetch_document_thumbnails failed:', err)
-    }
-
-    // Fetch all URLs in parallel (all should be cache hits now)
-    await Promise.allSettled(
-      pages.map(async ({ page }) => {
-        if (!thumbnailUrls.value.has(page.id)) {
-          try {
-            const filePath = await invoke<string>('get_thumbnail_url', {
-              pageId: page.id,
-            })
-            thumbnailUrls.value.set(page.id, convertFileSrc(filePath))
-          } catch (err) {
-            console.error(`Failed to load thumbnail for page ${page.page_num}:`, err)
-          }
+      const pageInfos = await invoke<PageSourceInfo[]>('get_page_source_urls', { documentId })
+      for (const info of pageInfos) {
+        if (info.source_path) {
+          pageSourceUrls.value.set(info.page_id, convertFileSrc(info.source_path))
         }
-      }),
-    )
-  }
-
-  async function getPreviewUrl(pageId: number): Promise<string | null> {
-    try {
-      const filePath = await invoke<string>('get_preview_url', {
-        pageId,
-      })
-      return convertFileSrc(filePath)
+      }
     } catch (err) {
-      console.error(`Failed to get preview URL for page ${pageId}:`, err)
-      return null
+      console.error('Failed to load page source URLs:', err)
     }
   }
 
-  async function getPageImageUrl(pageId: number): Promise<string | null> {
-    try {
-      const filePath = await invoke<string>('get_page_image_url', { pageId })
-      return convertFileSrc(filePath)
-    } catch (err) {
-      console.error(`Failed to get page image URL for page ${pageId}:`, err)
-      return null
-    }
+  function getPageSourceUrl(pageId: number): string | undefined {
+    return pageSourceUrls.value.get(pageId)
   }
 
-  async function getChunkImageUrl(chunkId: number): Promise<string | null> {
+  async function getChunkDataUrl(chunkId: number): Promise<string | null> {
     try {
-      return await invoke<string>('get_chunk_image_url', {
-        chunkId,
-      })
+      return await invoke<string>('get_chunk_data_url', { chunkId })
     } catch (err) {
-      console.error(`Failed to get chunk image URL for chunk ${chunkId}:`, err)
+      console.error(`Failed to get chunk data URL for chunk ${chunkId}:`, err)
       return null
     }
   }
 
   function clearCurrentDocument() {
     currentDocument.value = null
-    thumbnailUrls.value.clear()
-  }
-
-  function getThumbnailUrl(pageId: number): string | undefined {
-    return thumbnailUrls.value.get(pageId)
+    pageSourceUrls.value.clear()
+    sourceFilePath.value = null
   }
 
   return {
@@ -175,15 +152,14 @@ export const useDocumentsStore = defineStore('documents', () => {
     pageCount,
     isLoading,
     error,
-    thumbnailUrls,
+    sourceFilePath,
+    isPdf,
+    pageSourceUrls,
     loadDocuments,
     selectDocument,
-    loadThumbnails,
-    getPreviewUrl,
-    getPageImageUrl,
-    getChunkImageUrl,
+    getPageSourceUrl,
+    getChunkDataUrl,
     clearCurrentDocument,
-    getThumbnailUrl,
   }
 })
 

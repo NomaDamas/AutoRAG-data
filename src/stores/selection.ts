@@ -13,7 +13,6 @@ export interface EvidencePageItem {
   chunks: ImageChunkInfo[]
   documentId: number
   documentTitle: string
-  thumbnailUrl?: string
 }
 
 // Minimal shape for restoring evidence groups (avoids circular import with annotation store)
@@ -42,8 +41,6 @@ export const useSelectionStore = defineStore('selection', () => {
 
   const documentsStore = useDocumentsStore()
 
-  // Backward-compatible computeds
-  const selectedPageIds = computed(() => new Set(evidenceItems.value.keys()))
   const selectedCount = computed(() => evidenceItems.value.size)
   const hasSelection = computed(() => evidenceItems.value.size > 0)
 
@@ -52,31 +49,6 @@ export const useSelectionStore = defineStore('selection', () => {
       page: item.page,
       chunks: item.chunks,
     }))
-  })
-
-  // Get all chunk IDs from selected pages
-  const selectedChunkIds = computed((): number[] => {
-    const chunkIds: number[] = []
-    for (const item of evidenceItems.value.values()) {
-      for (const chunk of item.chunks) {
-        chunkIds.push(chunk.id)
-      }
-    }
-    return chunkIds
-  })
-
-  // Get all chunks with their scores for creating queries
-  const selectedChunksWithScores = computed((): EvidenceWithScore[] => {
-    const result: EvidenceWithScore[] = []
-    for (const item of evidenceItems.value.values()) {
-      for (const chunk of item.chunks) {
-        result.push({
-          chunk_id: chunk.id,
-          score: chunkScores.value.get(chunk.id) ?? 1,
-        })
-      }
-    }
-    return result
   })
 
   // Evidence groups: each group is an array of EvidenceWithScore
@@ -133,11 +105,6 @@ export const useSelectionStore = defineStore('selection', () => {
       .filter((grp) => grp.pages.length > 0)
   })
 
-  // Get all page IDs from selected pages
-  const selectedPageIdsList = computed((): number[] => {
-    return Array.from(evidenceItems.value.keys())
-  })
-
   function getChunkScore(chunkId: number): number {
     return chunkScores.value.get(chunkId) ?? 1
   }
@@ -171,14 +138,12 @@ export const useSelectionStore = defineStore('selection', () => {
 
     const docInfo = documentsStore.currentDocumentInfo
     const docTitle = docInfo?.title || docInfo?.filename || 'Untitled'
-    const thumbnailUrl = documentsStore.getThumbnailUrl(pageId)
 
     const item: EvidencePageItem = {
       page: { ...pageWithChunks.page },
       chunks: [...pageWithChunks.chunks],
       documentId: pageWithChunks.page.document_id,
       documentTitle: docTitle,
-      thumbnailUrl: thumbnailUrl || undefined,
     }
 
     evidenceItems.value.set(pageId, item)
@@ -218,11 +183,6 @@ export const useSelectionStore = defineStore('selection', () => {
     chunkScores.value.clear()
     customGroups.value = []
     groupingMode.value = 'and_all'
-  }
-
-  // Backward compat alias
-  function isSelected(pageId: number): boolean {
-    return evidenceItems.value.has(pageId)
   }
 
   // --- Grouping methods ---
@@ -328,7 +288,6 @@ export const useSelectionStore = defineStore('selection', () => {
               chunks: [...currentPageData.chunks],
               documentId: currentPageData.page.document_id,
               documentTitle: docTitle,
-              thumbnailUrl: documentsStore.getThumbnailUrl(pageId) || undefined,
             })
           } else {
             // Build from evidence data (cross-doc case or page not in current doc)
@@ -354,7 +313,6 @@ export const useSelectionStore = defineStore('selection', () => {
               chunks,
               documentId: item.page.document_id,
               documentTitle: `Document ${item.page.document_id}`,
-              thumbnailUrl: documentsStore.getThumbnailUrl(pageId) || undefined,
             })
           }
 
@@ -398,15 +356,9 @@ export const useSelectionStore = defineStore('selection', () => {
     clearEvidence,
     isInEvidence,
 
-    // Backward-compatible computeds
-    selectedPageIds,
     selectedCount,
     hasSelection,
     selectedPages,
-    selectedChunkIds,
-    selectedChunksWithScores,
-    selectedPageIdsList,
-    isSelected,
 
     // Scores
     chunkScores,

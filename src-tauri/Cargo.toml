@@ -30,14 +30,13 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chro
 tokio = { version = "1", features = ["full"] }
 
 # Image processing
-image = { version = "0.24", default-features = false, features = ["png", "jpeg", "webp"] }
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
 base64 = "0.22"
 
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
-directories = "5"
 
 # Export
 zip = { version = "2", features = ["deflate"] }

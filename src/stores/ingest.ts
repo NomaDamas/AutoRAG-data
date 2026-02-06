@@ -6,7 +6,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 export interface IngestionProgress {
   current_page: number
   total_pages: number
-  phase: 'Reading' | 'Rendering' | 'Caching' | 'Complete' | 'Failed'
+  phase: 'Reading' | 'Rendering' | 'Complete' | 'Failed'
   message: string
 }
 

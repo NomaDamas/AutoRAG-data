@@ -23,10 +23,11 @@ const previewPage = computed(() => {
   const pageWithChunks = documentsStore.currentPages.find(
     (pw) => pw.page.id === uiStore.previewPageId
   )
-  if (pageWithChunks) return pageWithChunks.page
+  if (pageWithChunks) return pageWithChunks
   // Fallback to evidence items (cross-doc)
   const evidenceItem = selectionStore.evidenceItems.get(uiStore.previewPageId)
-  return evidenceItem?.page ?? null
+  if (evidenceItem) return { page: evidenceItem.page, chunks: evidenceItem.chunks }
+  return null
 })
 
 const isPageInEvidence = computed(() => {
@@ -42,12 +43,25 @@ watch(
       return
     }
 
-    const page = previewPage.value
-    if (!page) return
+    const pw = previewPage.value
+    if (!pw) return
 
     isLoadingPreview.value = true
     try {
-      previewUrl.value = await documentsStore.getPreviewUrl(pageId)
+      // Try page source URL first (direct file)
+      const sourceUrl = documentsStore.getPageSourceUrl(pageId)
+      if (sourceUrl) {
+        previewUrl.value = sourceUrl
+        return
+      }
+
+      // Fall back to BYTEA data URL via first chunk
+      const chunkId = pw.chunks[0]?.id
+      if (chunkId) {
+        previewUrl.value = await documentsStore.getChunkDataUrl(chunkId)
+      } else {
+        previewUrl.value = null
+      }
     } finally {
       isLoadingPreview.value = false
     }
@@ -70,7 +84,7 @@ function handleToggleEvidence() {
     <DialogContent class="max-w-[95vw] sm:max-w-[95vw] bg-gray-800 border-gray-700 text-gray-100">
       <DialogHeader>
         <DialogTitle v-if="previewPage">
-          Page {{ previewPage.page_num }}
+          Page {{ previewPage.page.page_num }}
         </DialogTitle>
       </DialogHeader>
 
@@ -84,7 +98,7 @@ function handleToggleEvidence() {
         <img
           v-else-if="previewUrl"
           :src="previewUrl"
-          :alt="`Page ${previewPage?.page_num} preview`"
+          :alt="`Page ${previewPage?.page.page_num} preview`"
           class="mx-auto max-h-[92vh] rounded-lg object-contain"
         />
 
@@ -98,7 +112,7 @@ function handleToggleEvidence() {
       <div class="flex items-center justify-between text-sm text-gray-400">
         <div class="flex items-center gap-3">
           <span v-if="previewPage">
-            Page {{ previewPage.page_num }}
+            Page {{ previewPage.page.page_num }}
           </span>
           <Button
             v-if="uiStore.previewPageId !== null"

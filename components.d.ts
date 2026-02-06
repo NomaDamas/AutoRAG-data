@@ -44,6 +44,7 @@ declare module 'vue' {
     PageGrid: typeof import('./src/components/pages/PageGrid.vue')['default']
     PagePreview: typeof import('./src/components/pages/PagePreview.vue')['default']
     PageThumbnail: typeof import('./src/components/pages/PageThumbnail.vue')['default']
+    PdfViewer: typeof import('./src/components/pages/PdfViewer.vue')['default']
     Progress: typeof import('./src/components/ui/progress/Progress.vue')['default']
     QueryForm: typeof import('./src/components/annotation/QueryForm.vue')['default']
     QueryList: typeof import('./src/components/annotation/QueryList.vue')['default']

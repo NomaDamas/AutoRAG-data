@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, reactive } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useDocumentsStore, useSelectionStore, useUiStore, type PageWithChunks } from '@/stores'
@@ -8,24 +8,74 @@ const documentsStore = useDocumentsStore()
 const selectionStore = useSelectionStore()
 const uiStore = useUiStore()
 
+// On-demand thumbnail cache: chunkId → data URL
+const thumbnailCache = reactive<Map<number, string>>(new Map())
+const pendingLoads = new Set<number>()
+
+function loadThumbnail(chunkId: number) {
+  if (thumbnailCache.has(chunkId) || pendingLoads.has(chunkId)) return
+  pendingLoads.add(chunkId)
+
+  documentsStore.getChunkDataUrl(chunkId).then((url) => {
+    if (url) thumbnailCache.set(chunkId, url)
+    pendingLoads.delete(chunkId)
+  })
+}
+
+function getThumbnailUrl(pageWithChunks: PageWithChunks): string | undefined {
+  // Try page source URL from current document first
+  const sourceUrl = documentsStore.getPageSourceUrl(pageWithChunks.page.id)
+  if (sourceUrl) return sourceUrl
+
+  // Fall back to cached chunk data URL
+  const chunkId = pageWithChunks.chunks[0]?.id
+  if (!chunkId) return undefined
+
+  const cached = thumbnailCache.get(chunkId)
+  if (cached) return cached
+
+  // Trigger async load (fire-and-forget)
+  loadThumbnail(chunkId)
+  return undefined
+}
+
 function getPageInfo(pageWithChunks: PageWithChunks) {
   const evidenceItem = selectionStore.evidenceItems.get(pageWithChunks.page.id)
   return {
     ...pageWithChunks,
-    thumbnailUrl: evidenceItem?.thumbnailUrl || documentsStore.getThumbnailUrl(pageWithChunks.page.id),
+    thumbnailUrl: getThumbnailUrl(pageWithChunks),
     score: pageWithChunks.chunks[0] ? selectionStore.getChunkScore(pageWithChunks.chunks[0].id) : 1,
     documentTitle: evidenceItem?.documentTitle ?? 'Untitled',
     documentId: evidenceItem?.documentId ?? pageWithChunks.page.document_id,
   }
 }
 
-function getItemLabel(pageWithChunks: PageWithChunks) {
-  const info = getPageInfo(pageWithChunks)
+interface ItemInfo {
+  page: PageWithChunks['page']
+  chunks: PageWithChunks['chunks']
+  thumbnailUrl: string | undefined
+  score: number
+  documentTitle: string
+  documentId: number
+  label: string
+}
+
+// Pre-computed info for all evidence items — avoids repeated getPageInfo() in template
+const itemInfos = computed((): Map<number, ItemInfo> => {
+  const map = new Map<number, ItemInfo>()
   const currentDocId = documentsStore.currentDocumentInfo?.id
-  if (info.documentId === currentDocId) {
-    return `Page ${pageWithChunks.page.page_num}`
+  for (const pw of selectionStore.selectedPages) {
+    const info = getPageInfo(pw)
+    const label = info.documentId === currentDocId
+      ? `Page ${pw.page.page_num}`
+      : `${info.documentTitle} — Page ${pw.page.page_num}`
+    map.set(pw.page.id, { ...info, label })
   }
-  return `${info.documentTitle} — Page ${pageWithChunks.page.page_num}`
+  return map
+})
+
+function getItemInfo(pageId: number): ItemInfo {
+  return itemInfos.value.get(pageId)!
 }
 
 function handlePreview(pageId: number) {
@@ -141,8 +191,8 @@ function findCurrentGroupIndex(pageId: number): number {
           @click="handlePreview(item.page.id)"
         >
           <img
-            v-if="getPageInfo(item).thumbnailUrl"
-            :src="getPageInfo(item).thumbnailUrl"
+            v-if="getItemInfo(item.page.id).thumbnailUrl"
+            :src="getItemInfo(item.page.id).thumbnailUrl"
             :alt="`Page ${item.page.page_num}`"
             class="h-full w-full object-cover"
           />
@@ -155,7 +205,7 @@ function findCurrentGroupIndex(pageId: number): number {
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-sm font-medium text-gray-200">
-              {{ getItemLabel(item) }}
+              {{ getItemInfo(item.page.id).label }}
             </span>
             <Badge
               v-if="item.chunks.length > 0"
@@ -166,7 +216,7 @@ function findCurrentGroupIndex(pageId: number): number {
             </Badge>
           </div>
           <p class="text-xs text-gray-500 truncate">
-            {{ getPageInfo(item).documentTitle }}
+            {{ getItemInfo(item.page.id).documentTitle }}
           </p>
         </div>
 
@@ -175,7 +225,7 @@ function findCurrentGroupIndex(pageId: number): number {
           <Button
             v-for="s in scoreOptions"
             :key="s.val"
-            :variant="getPageInfo(item).score === s.val ? (s.val === 0 ? 'destructive' : s.val === 2 ? 'default' : 'secondary') : 'outline'"
+            :variant="getItemInfo(item.page.id).score === s.val ? (s.val === 0 ? 'destructive' : s.val === 2 ? 'default' : 'secondary') : 'outline'"
             size="sm"
             class="h-6 w-6 p-0"
             :title="s.title"
@@ -233,8 +283,8 @@ function findCurrentGroupIndex(pageId: number): number {
               @click="handlePreview(item.page.id)"
             >
               <img
-                v-if="getPageInfo(item).thumbnailUrl"
-                :src="getPageInfo(item).thumbnailUrl"
+                v-if="getItemInfo(item.page.id).thumbnailUrl"
+                :src="getItemInfo(item.page.id).thumbnailUrl"
                 :alt="`Page ${item.page.page_num}`"
                 class="h-full w-full object-cover"
               />
@@ -247,7 +297,7 @@ function findCurrentGroupIndex(pageId: number): number {
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-medium text-gray-200">
-                  {{ getItemLabel(item) }}
+                  {{ getItemInfo(item.page.id).label }}
                 </span>
                 <Badge
                   v-if="item.chunks.length > 0"
@@ -258,7 +308,7 @@ function findCurrentGroupIndex(pageId: number): number {
                 </Badge>
               </div>
               <p class="text-xs text-gray-500 truncate">
-                {{ getPageInfo(item).documentTitle }}
+                {{ getItemInfo(item.page.id).documentTitle }}
               </p>
             </div>
 
@@ -267,7 +317,7 @@ function findCurrentGroupIndex(pageId: number): number {
               <Button
                 v-for="s in scoreOptions"
                 :key="s.val"
-                :variant="getPageInfo(item).score === s.val ? (s.val === 0 ? 'destructive' : s.val === 2 ? 'default' : 'secondary') : 'outline'"
+                :variant="getItemInfo(item.page.id).score === s.val ? (s.val === 0 ? 'destructive' : s.val === 2 ? 'default' : 'secondary') : 'outline'"
                 size="sm"
                 class="h-6 w-6 p-0"
                 :title="s.title"

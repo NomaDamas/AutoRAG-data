@@ -11,9 +11,6 @@ pub enum AppError {
     #[error("Not connected to database")]
     NotConnected,
 
-    #[error("Cache error: {0}")]
-    Cache(String),
-
     #[error("Not found: {0}")]
     NotFound(String),
 

@@ -1,29 +1,17 @@
-mod cache;
 mod commands;
 mod db;
 mod error;
 mod ingest;
 mod state;
 
-use std::sync::Mutex;
-
-use cache::CacheManager;
-use directories::ProjectDirs;
 use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let cache_path = ProjectDirs::from("com", "autorag", "data")
-        .map(|dirs| dirs.cache_dir().to_path_buf())
-        .unwrap_or_else(|| std::env::temp_dir().join("autorag-data-cache"));
-
-    let app_state = AppState::new(cache_path.clone());
-
-    let cache_manager = CacheManager::new(cache_path).ok();
+    let app_state = AppState::new();
 
     tauri::Builder::default()
         .manage(app_state)
-        .manage(Mutex::new(cache_manager))
         .setup(|_app| {
             #[cfg(debug_assertions)]
             {
@@ -52,15 +40,10 @@ pub fn run() {
             commands::get_page_chunks,
             commands::get_file_path,
             commands::get_document_page_count,
-            // Cache commands
-            commands::get_thumbnail_url,
-            commands::get_preview_url,
-            commands::get_page_image_url,
-            commands::get_chunk_image_url,
-            commands::clear_cache,
-            commands::clear_db_cache,
-            commands::get_cache_size,
-            commands::prefetch_document_thumbnails,
+            // Image commands
+            commands::get_source_file_url,
+            commands::get_page_source_urls,
+            commands::get_chunk_data_url,
             // Query commands
             commands::create_query,
             commands::update_query,

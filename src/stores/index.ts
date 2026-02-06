@@ -6,7 +6,6 @@ export {
   type PageInfo,
   type ImageChunkInfo,
   type PageWithChunks,
-  type FileWithDocuments,
   type DocumentWithPages,
 } from './documents'
 export { useSelectionStore, type EvidenceWithScore, type EvidencePageItem } from './selection'

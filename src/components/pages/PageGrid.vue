@@ -159,7 +159,7 @@ const documentTitle = computed(() => {
           :is-focused="selectionStore.focusedPageId === pageWithChunks.page.id"
           :is-in-evidence="selectionStore.isInEvidence(pageWithChunks.page.id)"
           :show-page-number="uiStore.showPageNumbers"
-          :thumbnail-url="documentsStore.getThumbnailUrl(pageWithChunks.page.id)"
+          :thumbnail-url="documentsStore.getPageSourceUrl(pageWithChunks.page.id)"
           @click="handlePageClick(pageWithChunks.page.id, $event)"
           @toggle-evidence="handleToggleEvidence(pageWithChunks.page.id)"
         />

@@ -4,25 +4,11 @@ use crate::db::{create_pool, test_connection as test_db_connection, DatabaseConf
 use crate::error::{AppError, Result};
 use crate::state::AppState;
 
-/// Sanitize a string for use in file paths
-fn sanitize_for_path(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
 #[tauri::command]
 pub async fn connect_database(config: DatabaseConfig, state: State<'_, AppState>) -> Result<bool> {
     let pool = create_pool(&config).await?;
     test_db_connection(&pool).await?;
-    let db_name = sanitize_for_path(&config.database);
-    state.set_connection(pool, db_name).await;
+    state.set_connection(pool).await;
     Ok(true)
 }
 

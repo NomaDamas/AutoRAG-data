@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, computed } from 'vue'
+import { convertFileSrc } from '@tauri-apps/api/core'
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -11,12 +12,18 @@ import ConnectionDialog from '@/components/connection/ConnectionDialog.vue'
 import IngestDialog from '@/components/ingest/IngestDialog.vue'
 import DocumentSelector from '@/components/documents/DocumentSelector.vue'
 import PageGrid from '@/components/pages/PageGrid.vue'
+import PdfViewer from '@/components/pages/PdfViewer.vue'
 import PagePreview from '@/components/pages/PagePreview.vue'
 import AnnotationPanel from '@/components/annotation/AnnotationPanel.vue'
 
 const connectionStore = useConnectionStore()
 const documentsStore = useDocumentsStore()
 const uiStore = useUiStore()
+
+const pdfAssetUrl = computed(() => {
+  if (!documentsStore.sourceFilePath) return ''
+  return convertFileSrc(documentsStore.sourceFilePath)
+})
 
 onMounted(async () => {
   await connectionStore.checkConnectionStatus()
@@ -41,9 +48,10 @@ onMounted(async () => {
 
       <ResizableHandle class="w-1 bg-gray-700 hover:bg-blue-500 transition-colors" />
 
-      <!-- Center Panel: Page Grid -->
+      <!-- Center Panel: PDF Viewer or Page Grid -->
       <ResizablePanel :default-size="100 - uiStore.leftPanelSize - uiStore.rightPanelSize" :min-size="30" class="h-full">
-        <PageGrid />
+        <PdfViewer v-if="documentsStore.isPdf" :pdf-url="pdfAssetUrl" />
+        <PageGrid v-else />
       </ResizablePanel>
 
       <ResizableHandle class="w-1 bg-gray-700 hover:bg-blue-500 transition-colors" />
