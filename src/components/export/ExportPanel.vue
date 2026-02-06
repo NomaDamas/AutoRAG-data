@@ -152,9 +152,8 @@ function handleReset() {
         <div class="flex items-center gap-2">
           <Checkbox
             id="createZip"
-            :checked="createZip"
+            v-model="createZip"
             :disabled="exportStore.isExporting"
-            @update:checked="createZip = $event as boolean"
           />
           <Label for="createZip" class="text-gray-300 cursor-pointer">
             Compress as ZIP
@@ -170,9 +169,8 @@ function handleReset() {
               <div class="flex items-center gap-2">
                 <Checkbox
                   id="includeDocuments"
-                  :checked="includeDocuments"
+                  v-model="includeDocuments"
                   :disabled="exportStore.isExporting"
-                  @update:checked="includeDocuments = $event as boolean"
                 />
                 <Label for="includeDocuments" class="text-gray-300 cursor-pointer">
                   Documents
@@ -187,9 +185,8 @@ function handleReset() {
               <div class="flex items-center gap-2">
                 <Checkbox
                   id="includeQueries"
-                  :checked="includeQueries"
+                  v-model="includeQueries"
                   :disabled="exportStore.isExporting"
-                  @update:checked="includeQueries = $event as boolean"
                 />
                 <Label for="includeQueries" class="text-gray-300 cursor-pointer">
                   Queries
@@ -204,9 +201,8 @@ function handleReset() {
               <div class="flex items-center gap-2">
                 <Checkbox
                   id="includeRelations"
-                  :checked="includeRelations"
+                  v-model="includeRelations"
                   :disabled="exportStore.isExporting"
-                  @update:checked="includeRelations = $event as boolean"
                 />
                 <Label for="includeRelations" class="text-gray-300 cursor-pointer">
                   Retrieval Relations
@@ -221,9 +217,8 @@ function handleReset() {
               <div class="flex items-center gap-2">
                 <Checkbox
                   id="includeImageChunks"
-                  :checked="includeImageChunks"
+                  v-model="includeImageChunks"
                   :disabled="exportStore.isExporting"
-                  @update:checked="includeImageChunks = $event as boolean"
                 />
                 <Label for="includeImageChunks" class="text-gray-300 cursor-pointer">
                   Image Chunks (CSV)
@@ -238,9 +233,8 @@ function handleReset() {
               <div class="flex items-center gap-2">
                 <Checkbox
                   id="includeImages"
-                  :checked="includeImages"
+                  v-model="includeImages"
                   :disabled="exportStore.isExporting"
-                  @update:checked="includeImages = $event as boolean"
                 />
                 <Label for="includeImages" class="text-gray-300 cursor-pointer">
                   Image Files (PNG)
