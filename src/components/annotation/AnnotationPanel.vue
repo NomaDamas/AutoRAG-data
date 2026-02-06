@@ -44,7 +44,7 @@ const activeTab = ref<'create' | 'list' | 'export'>('create')
       </div>
     </div>
 
-    <ScrollArea class="flex-1">
+    <ScrollArea class="flex-1 min-h-0">
       <div class="p-4">
         <!-- Not Connected State -->
         <div

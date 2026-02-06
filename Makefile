@@ -15,10 +15,3 @@ docker-wait:
 docker-down:
 	@echo "🛑 Stopping PostgreSQL containers..."
 	@cd postgresql && docker compose --env-file .env down
-
-# 완전 정리 (볼륨 포함)
-clean-docker:
-	@echo "🧹 Cleaning up PostgreSQL containers and volumes..."
-	@cd postgresql && docker compose --env-file .env down -v
-	@echo "🗑️  Removing pgdata directory..."
-	@rm -rf postgresql/pgdata
