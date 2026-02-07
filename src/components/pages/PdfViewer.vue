@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted, computed } from 'vue'
+import { ref, shallowRef, watch, onUnmounted, computed, nextTick } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist'
+import { useThrottleFn } from '@vueuse/core'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSelectionStore, useDocumentsStore } from '@/stores'
+import { usePdfPageObserver } from '@/composables'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs',
@@ -17,40 +19,160 @@ const props = defineProps<{
 const selectionStore = useSelectionStore()
 const documentsStore = useDocumentsStore()
 
-const canvasRef = ref<HTMLCanvasElement | null>(null)
-const currentPage = ref(1)
 const totalPages = ref(0)
+const currentPage = ref(1)
+const pageInputValue = ref('1')
 const isLoading = ref(false)
 const error = ref<string | null>(null)
-const scale = ref(1.5)
 
-let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
+// Aspect ratio for placeholder sizing (width / height from page 1)
+const pageAspectRatio = ref<number | null>(null)
 
-const canGoBack = computed(() => currentPage.value > 1)
-const canGoForward = computed(() => currentPage.value < totalPages.value)
+const pdfDocRef = shallowRef<pdfjsLib.PDFDocumentProxy | null>(null)
 
-// Resolve the current page_num → PageWithChunks from the store (single lookup)
-const currentPageData = computed(() =>
-  documentsStore.currentPages.find(
-    (pw) => pw.page.page_num === currentPage.value,
-  ) ?? null,
-)
+// Scroll container refs
+const mainScrollRef = ref<HTMLElement | null>(null)
+const thumbScrollRef = ref<HTMLElement | null>(null)
+
+// Canvas refs for each page (keyed by index)
+const mainCanvasRefs = ref<Map<number, HTMLCanvasElement>>(new Map())
+const thumbCanvasRefs = ref<Map<number, HTMLCanvasElement>>(new Map())
+
+// Page container refs for scrolling
+const pageContainerRefs = ref<Map<number, HTMLElement>>(new Map())
+const thumbContainerRefs = ref<Map<number, HTMLElement>>(new Map())
+
+// Observers
+const mainObserver = usePdfPageObserver(pdfDocRef, 1.5, '400px 0px')
+const thumbObserver = usePdfPageObserver(pdfDocRef, 0.2, '200px 0px')
+
+// --- Helpers ---
+
+function getPageData(pageNum: number) {
+  return (
+    documentsStore.currentPages.find((pw) => pw.page.page_num === pageNum) ??
+    null
+  )
+}
+
+const currentPageData = computed(() => getPageData(currentPage.value))
+
+const isCurrentPageInEvidence = computed(() => {
+  if (!currentPageData.value) return false
+  return selectionStore.isInEvidence(currentPageData.value.page.id)
+})
+
+function isPageInEvidence(pageNum: number): boolean {
+  const pd = getPageData(pageNum)
+  return pd ? selectionStore.isInEvidence(pd.page.id) : false
+}
+
+function toggleCurrentPageEvidence() {
+  if (currentPageData.value) {
+    selectionStore.toggleEvidence(currentPageData.value.page.id)
+  }
+}
+
+function handlePageClick(pageNum: number, event: MouseEvent) {
+  const pd = getPageData(pageNum)
+  if (!pd) return
+
+  if (event.metaKey || event.ctrlKey) {
+    selectionStore.toggleEvidence(pd.page.id)
+  } else {
+    selectionStore.focusPage(pd.page.id)
+  }
+}
+
+// --- Page input / jump ---
+
+function jumpToPage() {
+  const num = parseInt(pageInputValue.value, 10)
+  if (isNaN(num)) {
+    pageInputValue.value = String(currentPage.value)
+    return
+  }
+  const clamped = Math.max(1, Math.min(num, totalPages.value))
+  scrollToPage(clamped)
+}
+
+function resetPageInput() {
+  pageInputValue.value = String(currentPage.value)
+}
+
+function scrollToPage(pageNum: number) {
+  const container = pageContainerRefs.value.get(pageNum)
+  if (container) {
+    container.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+// --- Scroll tracking ---
+
+const updateCurrentPageFromScroll = useThrottleFn(() => {
+  const scrollEl = mainScrollRef.value
+  if (!scrollEl) return
+
+  const scrollMid = scrollEl.scrollTop + scrollEl.clientHeight / 2
+  let closestPage = 1
+  let closestDist = Infinity
+
+  for (const [pageNum, el] of pageContainerRefs.value) {
+    const elMid = el.offsetTop + el.offsetHeight / 2
+    const dist = Math.abs(elMid - scrollMid)
+    if (dist < closestDist) {
+      closestDist = dist
+      closestPage = pageNum
+    }
+  }
+
+  if (closestPage !== currentPage.value) {
+    currentPage.value = closestPage
+    pageInputValue.value = String(closestPage)
+    scrollThumbIntoView(closestPage)
+  }
+}, 100)
+
+function scrollThumbIntoView(pageNum: number) {
+  const thumbEl = thumbContainerRefs.value.get(pageNum)
+  if (thumbEl) {
+    thumbEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+}
+
+// --- PDF loading ---
 
 async function loadPdf(url: string) {
   isLoading.value = true
   error.value = null
+  mainObserver.reset()
+  thumbObserver.reset()
+  mainCanvasRefs.value.clear()
+  thumbCanvasRefs.value.clear()
+  pageContainerRefs.value.clear()
+  thumbContainerRefs.value.clear()
 
   try {
-    if (pdfDoc) {
-      pdfDoc.destroy()
-      pdfDoc = null
+    if (pdfDocRef.value) {
+      pdfDocRef.value.destroy()
+      pdfDocRef.value = null
     }
 
     const loadingTask = pdfjsLib.getDocument(url)
-    pdfDoc = await loadingTask.promise
-    totalPages.value = pdfDoc.numPages
+    const doc = await loadingTask.promise
+    pdfDocRef.value = doc
+    totalPages.value = doc.numPages
     currentPage.value = 1
-    await renderPage(1)
+    pageInputValue.value = '1'
+
+    // Get aspect ratio from page 1
+    const firstPage = await doc.getPage(1)
+    const vp = firstPage.getViewport({ scale: 1 })
+    pageAspectRatio.value = vp.width / vp.height
+
+    // Wait for DOM to render, then set up observers
+    await nextTick()
+    setupObservers()
   } catch (err) {
     console.error('Failed to load PDF:', err)
     error.value = err instanceof Error ? err.message : String(err)
@@ -59,68 +181,48 @@ async function loadPdf(url: string) {
   }
 }
 
-async function renderPage(pageNum: number) {
-  if (!pdfDoc || !canvasRef.value) return
+function setupObservers() {
+  if (mainScrollRef.value) {
+    mainObserver.createObserver(mainScrollRef.value)
+  }
+  if (thumbScrollRef.value) {
+    thumbObserver.createObserver(thumbScrollRef.value)
+  }
 
-  isLoading.value = true
-  try {
-    const page = await pdfDoc.getPage(pageNum)
-    const viewport = page.getViewport({ scale: scale.value })
-
-    const canvas = canvasRef.value
-    const context = canvas.getContext('2d')
-    if (!context) return
-
-    canvas.height = viewport.height
-    canvas.width = viewport.width
-
-    await page.render({
-      canvasContext: context,
-      viewport,
-      canvas,
-    }).promise
-  } catch (err) {
-    console.error('Failed to render page:', err)
-    error.value = err instanceof Error ? err.message : String(err)
-  } finally {
-    isLoading.value = false
+  // Observe all registered canvases
+  for (const [pageNum, canvas] of mainCanvasRefs.value) {
+    mainObserver.observe(canvas, pageNum)
+  }
+  for (const [pageNum, canvas] of thumbCanvasRefs.value) {
+    thumbObserver.observe(canvas, pageNum)
   }
 }
 
-function prevPage() {
-  if (canGoBack.value) {
-    currentPage.value--
-    renderPage(currentPage.value)
+// --- Template ref callbacks ---
+
+function setMainCanvas(el: HTMLCanvasElement | null, pageNum: number) {
+  if (el) {
+    mainCanvasRefs.value.set(pageNum, el)
+    mainObserver.observe(el, pageNum)
   }
 }
 
-function nextPage() {
-  if (canGoForward.value) {
-    currentPage.value++
-    renderPage(currentPage.value)
+function setThumbCanvas(el: HTMLCanvasElement | null, pageNum: number) {
+  if (el) {
+    thumbCanvasRefs.value.set(pageNum, el)
+    thumbObserver.observe(el, pageNum)
   }
 }
 
-function handleCanvasClick(event: MouseEvent) {
-  if (!currentPageData.value) return
-
-  if (event.metaKey || event.ctrlKey) {
-    selectionStore.toggleEvidence(currentPageData.value.page.id)
-  } else {
-    selectionStore.focusPage(currentPageData.value.page.id)
-  }
+function setPageContainer(el: HTMLElement | null, pageNum: number) {
+  if (el) pageContainerRefs.value.set(pageNum, el)
 }
 
-const isCurrentPageInEvidence = computed(() => {
-  if (!currentPageData.value) return false
-  return selectionStore.isInEvidence(currentPageData.value.page.id)
-})
-
-function toggleCurrentPageEvidence() {
-  if (currentPageData.value) {
-    selectionStore.toggleEvidence(currentPageData.value.page.id)
-  }
+function setThumbContainer(el: HTMLElement | null, pageNum: number) {
+  if (el) thumbContainerRefs.value.set(pageNum, el)
 }
+
+// --- Lifecycle ---
 
 watch(
   () => props.pdfUrl,
@@ -131,11 +233,16 @@ watch(
 )
 
 onUnmounted(() => {
-  if (pdfDoc) {
-    pdfDoc.destroy()
-    pdfDoc = null
+  if (pdfDocRef.value) {
+    pdfDocRef.value.destroy()
+    pdfDocRef.value = null
   }
 })
+
+// Generate array of page numbers for v-for
+const pageNumbers = computed(() =>
+  Array.from({ length: totalPages.value }, (_, i) => i + 1),
+)
 </script>
 
 <template>
@@ -163,25 +270,15 @@ onUnmounted(() => {
           {{ isCurrentPageInEvidence ? 'In evidence' : 'Add to evidence' }}
         </Button>
 
-        <!-- Page Navigation -->
-        <div class="flex items-center gap-2">
-          <button
-            class="rounded px-2 py-1 text-sm text-gray-400 hover:bg-gray-700 hover:text-gray-200 disabled:opacity-30"
-            :disabled="!canGoBack"
-            @click="prevPage"
-          >
-            ←
-          </button>
-          <span class="text-sm text-gray-400">
-            {{ currentPage }} / {{ totalPages }}
-          </span>
-          <button
-            class="rounded px-2 py-1 text-sm text-gray-400 hover:bg-gray-700 hover:text-gray-200 disabled:opacity-30"
-            :disabled="!canGoForward"
-            @click="nextPage"
-          >
-            →
-          </button>
+        <!-- Page input -->
+        <div class="flex items-center gap-1">
+          <input
+            v-model="pageInputValue"
+            class="w-12 rounded bg-gray-800 px-2 py-1 text-center text-sm text-gray-200 outline-none ring-1 ring-gray-600 focus:ring-blue-500"
+            @keydown.enter="jumpToPage"
+            @blur="resetPageInput"
+          />
+          <span class="text-sm text-gray-400">/ {{ totalPages }}</span>
         </div>
 
         <!-- Evidence count -->
@@ -199,27 +296,86 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Canvas Area -->
-    <div class="flex-1 overflow-auto flex items-start justify-center p-4">
-      <!-- Loading -->
-      <div v-if="isLoading && !canvasRef?.width" class="flex items-center justify-center h-full">
-        <Skeleton class="h-[80vh] w-[60vh] bg-gray-700" />
+    <!-- Main content: thumbnail sidebar + scrollable pages -->
+    <div class="flex min-h-0 flex-1">
+      <!-- Thumbnail sidebar -->
+      <div
+        ref="thumbScrollRef"
+        class="w-24 shrink-0 overflow-y-auto border-r border-gray-700 bg-gray-800/50 p-2"
+      >
+        <div
+          v-for="pageNum in pageNumbers"
+          :key="'thumb-' + pageNum"
+          :ref="(el) => setThumbContainer(el as HTMLElement, pageNum)"
+          class="mb-2 cursor-pointer rounded p-1 transition-all"
+          :class="[
+            pageNum === currentPage ? 'ring-2 ring-blue-500' : '',
+            isPageInEvidence(pageNum) ? 'ring-2 ring-amber-500' : '',
+            pageNum === currentPage && isPageInEvidence(pageNum) ? 'ring-2 ring-amber-500' : '',
+          ]"
+          @click="scrollToPage(pageNum)"
+        >
+          <div
+            class="relative w-full overflow-hidden rounded bg-gray-700"
+            :style="pageAspectRatio ? { aspectRatio: String(pageAspectRatio) } : {}"
+          >
+            <canvas
+              :ref="(el) => setThumbCanvas(el as HTMLCanvasElement, pageNum)"
+              class="h-full w-full object-contain"
+            />
+            <!-- Amber dot for evidence pages -->
+            <div
+              v-if="isPageInEvidence(pageNum)"
+              class="absolute right-1 top-1 h-2 w-2 rounded-full bg-amber-500"
+            />
+          </div>
+          <p class="mt-1 text-center text-[10px] text-gray-400">{{ pageNum }}</p>
+        </div>
       </div>
 
-      <!-- Error -->
-      <div v-else-if="error" class="flex flex-col items-center justify-center h-full text-gray-500">
-        <span class="i-mdi-file-alert-outline text-6xl mb-4" />
-        <p class="text-sm">Failed to load PDF</p>
-        <p class="text-xs mt-1">{{ error }}</p>
-      </div>
+      <!-- Main scrollable view -->
+      <div
+        ref="mainScrollRef"
+        class="flex-1 overflow-y-auto"
+        @scroll="updateCurrentPageFromScroll"
+      >
+        <!-- Loading skeleton -->
+        <div v-if="isLoading && totalPages === 0" class="flex items-center justify-center p-8">
+          <Skeleton class="h-[80vh] w-[60vh] bg-gray-700" />
+        </div>
 
-      <!-- PDF Canvas -->
-      <canvas
-        ref="canvasRef"
-        class="max-w-full cursor-pointer rounded shadow-lg"
-        :class="isCurrentPageInEvidence ? 'ring-2 ring-amber-500' : ''"
-        @click="handleCanvasClick"
-      />
+        <!-- Error -->
+        <div v-else-if="error" class="flex flex-col items-center justify-center p-8 text-gray-500">
+          <span class="i-mdi-file-alert-outline mb-4 text-6xl" />
+          <p class="text-sm">Failed to load PDF</p>
+          <p class="mt-1 text-xs">{{ error }}</p>
+        </div>
+
+        <!-- Pages -->
+        <div v-else class="flex flex-col items-center gap-4 p-4">
+          <div
+            v-for="pageNum in pageNumbers"
+            :key="'page-' + pageNum"
+            :ref="(el) => setPageContainer(el as HTMLElement, pageNum)"
+            class="w-full max-w-4xl"
+          >
+            <div
+              class="relative overflow-hidden rounded shadow-lg"
+              :style="pageAspectRatio ? { aspectRatio: String(pageAspectRatio) } : {}"
+              :class="[
+                isPageInEvidence(pageNum) ? 'ring-2 ring-amber-500' : '',
+                'cursor-pointer',
+              ]"
+              @click="handlePageClick(pageNum, $event)"
+            >
+              <canvas
+                :ref="(el) => setMainCanvas(el as HTMLCanvasElement, pageNum)"
+                class="h-full w-full object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Footer hint -->
