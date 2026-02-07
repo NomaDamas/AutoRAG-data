@@ -6,6 +6,8 @@ Desktop application for building and managing RAG evaluation datasets, works per
 Ingest documents, annotate queries with evidence, and export structured datasets.
 Currently supports Visual Document Retrieval type datasets, more in the future.
 
+![sample](./public/usage_example.png)
+
 ## Features
 
 - **PDF/image ingestion** with page-level rendering and thumbnail caching
