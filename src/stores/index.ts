@@ -7,6 +7,7 @@ export {
   type ImageChunkInfo,
   type PageWithChunks,
   type DocumentWithPages,
+  type DocumentDeletionCheck,
 } from './documents'
 export { useSelectionStore, type EvidenceWithScore, type EvidencePageItem } from './selection'
 export {

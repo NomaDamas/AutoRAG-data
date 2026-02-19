@@ -1,6 +1,7 @@
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import type { Query } from './annotation'
 
 // Types matching the new AutoRAG-Research schema
 export interface File {
@@ -42,6 +43,11 @@ export interface DocumentWithPages {
   pages: PageWithChunks[]
 }
 
+export interface DocumentDeletionCheck {
+  deletable: boolean
+  blocking_queries: Query[]
+}
+
 interface PageSourceInfo {
   page_id: number
   chunk_ids: number[]
@@ -53,6 +59,7 @@ export const useDocumentsStore = defineStore('documents', () => {
   const documents = ref<Document[]>([])
   const currentDocument = ref<DocumentWithPages | null>(null)
   const isLoading = ref(false)
+  const isDeleting = ref(false)
   const error = ref<string | null>(null)
 
   // Source file path for the current document (from file table)
@@ -138,6 +145,28 @@ export const useDocumentsStore = defineStore('documents', () => {
     }
   }
 
+  async function checkDocumentDeletable(documentId: number): Promise<DocumentDeletionCheck> {
+    return await invoke<DocumentDeletionCheck>('check_document_deletable', { documentId })
+  }
+
+  async function deleteDocument(documentId: number): Promise<boolean> {
+    isDeleting.value = true
+    try {
+      await invoke<boolean>('delete_document', { documentId })
+      documents.value = documents.value.filter((d) => d.id !== documentId)
+      if (currentDocument.value?.document.id === documentId) {
+        clearCurrentDocument()
+      }
+      return true
+    } catch (err) {
+      console.error('deleteDocument error:', err)
+      error.value = err instanceof Error ? err.message : String(err)
+      return false
+    } finally {
+      isDeleting.value = false
+    }
+  }
+
   function clearCurrentDocument() {
     currentDocument.value = null
     pageSourceUrls.value.clear()
@@ -151,6 +180,7 @@ export const useDocumentsStore = defineStore('documents', () => {
     currentDocumentInfo,
     pageCount,
     isLoading,
+    isDeleting,
     error,
     sourceFilePath,
     isPdf,
@@ -159,6 +189,8 @@ export const useDocumentsStore = defineStore('documents', () => {
     selectDocument,
     getPageSourceUrl,
     getChunkDataUrl,
+    checkDocumentDeletable,
+    deleteDocument,
     clearCurrentDocument,
   }
 })

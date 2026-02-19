@@ -178,3 +178,10 @@ pub struct UpdateScoreRequest {
     pub group_order: i32,
     pub score: i32,
 }
+
+/// Result of checking whether a document can be safely deleted
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentDeletionCheck {
+    pub deletable: bool,
+    pub blocking_queries: Vec<Query>,
+}

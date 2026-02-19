@@ -10,6 +10,8 @@ export const useUiStore = defineStore('ui', () => {
   const isConnectionDialogOpen = ref(false)
   const isPreviewModalOpen = ref(false)
   const isIngestDialogOpen = ref(false)
+  const isDeleteDocumentDialogOpen = ref(false)
+  const deleteDocumentTarget = ref<{ id: number; title: string } | null>(null)
   const previewPageId = ref<number | null>(null)
 
   // View settings
@@ -30,6 +32,16 @@ export const useUiStore = defineStore('ui', () => {
 
   function closeIngestDialog() {
     isIngestDialogOpen.value = false
+  }
+
+  function openDeleteDocumentDialog(id: number, title: string) {
+    deleteDocumentTarget.value = { id, title }
+    isDeleteDocumentDialogOpen.value = true
+  }
+
+  function closeDeleteDocumentDialog() {
+    isDeleteDocumentDialogOpen.value = false
+    deleteDocumentTarget.value = null
   }
 
   function openPreview(pageId: number) {
@@ -64,6 +76,8 @@ export const useUiStore = defineStore('ui', () => {
     isConnectionDialogOpen,
     isPreviewModalOpen,
     isIngestDialogOpen,
+    isDeleteDocumentDialogOpen,
+    deleteDocumentTarget,
     previewPageId,
     thumbnailSize,
     showPageNumbers,
@@ -71,6 +85,8 @@ export const useUiStore = defineStore('ui', () => {
     closeConnectionDialog,
     openIngestDialog,
     closeIngestDialog,
+    openDeleteDocumentDialog,
+    closeDeleteDocumentDialog,
     openPreview,
     closePreview,
     setThumbnailSize,
