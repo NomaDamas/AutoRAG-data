@@ -24,6 +24,7 @@ declare module 'vue' {
     CardTitle: typeof import('./src/components/ui/card/CardTitle.vue')['default']
     Checkbox: typeof import('./src/components/ui/checkbox/Checkbox.vue')['default']
     ConnectionDialog: typeof import('./src/components/connection/ConnectionDialog.vue')['default']
+    DeleteDocumentDialog: typeof import('./src/components/documents/DeleteDocumentDialog.vue')['default']
     Dialog: typeof import('./src/components/ui/dialog/Dialog.vue')['default']
     DialogClose: typeof import('./src/components/ui/dialog/DialogClose.vue')['default']
     DialogContent: typeof import('./src/components/ui/dialog/DialogContent.vue')['default']

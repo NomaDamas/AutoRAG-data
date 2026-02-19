@@ -2,6 +2,7 @@
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import DeleteDocumentDialog from './DeleteDocumentDialog.vue'
 import { useConnectionStore, useDocumentsStore, useSelectionStore, useUiStore } from '@/stores'
 
 const connectionStore = useConnectionStore()
@@ -16,6 +17,10 @@ async function selectDocument(documentId: number) {
 
 function isDocumentSelected(documentId: number): boolean {
   return documentsStore.currentDocumentInfo?.id === documentId
+}
+
+function handleDeleteClick(doc: { id: number; title: string | null; filename: string | null }) {
+  uiStore.openDeleteDocumentDialog(doc.id, doc.title || doc.filename || 'Untitled')
 }
 
 async function handleRefresh() {
@@ -95,18 +100,31 @@ async function handleRefresh() {
 
         <!-- Document List -->
         <div v-else class="space-y-0.5">
-          <button
+          <div
             v-for="doc in documentsStore.documents"
             :key="doc.id"
-            class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors"
+            class="group flex items-center rounded transition-colors"
             :class="isDocumentSelected(doc.id) ? 'bg-blue-600 text-white' : 'hover:bg-gray-700 text-gray-300'"
-            @click="selectDocument(doc.id)"
           >
-            <span class="i-mdi-file-document-outline" />
-            <span class="flex-1 truncate">{{ doc.title || doc.filename || 'Untitled' }}</span>
-          </button>
+            <button
+              class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
+              @click="selectDocument(doc.id)"
+            >
+              <span class="i-mdi-file-document-outline shrink-0" />
+              <span class="flex-1 truncate">{{ doc.title || doc.filename || 'Untitled' }}</span>
+            </button>
+            <button
+              class="mr-1 shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+              title="Delete document"
+              @click.stop="handleDeleteClick(doc)"
+            >
+              <span class="i-mdi-delete-outline text-base" />
+            </button>
+          </div>
         </div>
       </div>
     </ScrollArea>
+
+    <DeleteDocumentDialog />
   </div>
 </template>

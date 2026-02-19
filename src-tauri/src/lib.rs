@@ -40,6 +40,8 @@ pub fn run() {
             commands::get_page_chunks,
             commands::get_file_path,
             commands::get_document_page_count,
+            commands::check_document_deletable,
+            commands::delete_document,
             // Image commands
             commands::get_source_file_url,
             commands::get_page_source_urls,
